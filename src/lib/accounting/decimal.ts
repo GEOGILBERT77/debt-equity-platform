@@ -48,7 +48,6 @@ function formatRaw(raw: bigint): string {
 
 function parseToRaw(v: number | string): bigint {
   let s = typeof v === "number" ? v.toString() : v.trim();
-  let s = typeof v === "number" ? v.toString() : v.trim();
   if (s === "") throw new Error("Cannot create a decimal from an empty string");
   if (/e/i.test(s)) s = Number(s).toFixed(SCALE); // normalize exponential notation
   const negative = s.startsWith("-");
