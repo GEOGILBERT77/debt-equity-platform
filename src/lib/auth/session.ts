@@ -84,7 +84,7 @@ function toBase64Url(bytes: ArrayBuffer | Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function fromBase64Url(value: string): Uint8Array {
+function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
   const binary = atob(padded);
@@ -156,7 +156,7 @@ export async function verifySessionToken(token: string, secret: string): Promise
   const signatureB64 = token.slice(dotIndex + 1);
   if (!payloadB64 || !signatureB64) return null;
 
-  let signatureBytes: Uint8Array;
+  let signatureBytes: Uint8Array<ArrayBuffer>;
   try {
     signatureBytes = fromBase64Url(signatureB64);
   } catch {
