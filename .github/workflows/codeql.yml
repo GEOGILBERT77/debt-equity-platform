@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
 
@@ -41,6 +41,6 @@ jobs:
       # Deployment & Infra "CI/CD pipeline" item — this file is scoped to security
       # scanning only, not a full pipeline).
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:javascript-typescript"
