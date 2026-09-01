@@ -77,7 +77,7 @@ export function classifyTdrModification(input: TdrModificationTestInput): TdrMod
   if (input.restructuredCashFlows.length === 0) {
     throw new Error("restructuredCashFlows must contain at least one future payment.");
   }
-  const totalFutureCashPayments = input.restructuredCashFlows.reduce(
+  const totalFutureCashPayments = input.restructuredCashFlows.reduce<Money>(
     (sum, cf) => sum.plus(cf),
     money(0)
   );

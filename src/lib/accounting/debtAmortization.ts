@@ -71,7 +71,7 @@ export function solveEffectiveYield(
 ): Money {
   const proceeds = new Decimal(netProceeds);
   const pv = (r: Decimal) =>
-    cashFlows.reduce(
+    cashFlows.reduce<Decimal>(
       (sum, cf, i) => sum.plus(new Decimal(cf).div(r.plus(1).pow(i + 1))),
       new Decimal(0)
     );
