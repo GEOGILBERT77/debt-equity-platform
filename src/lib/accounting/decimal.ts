@@ -46,8 +46,8 @@ function formatRaw(raw: bigint): string {
   return `${negative ? "-" : ""}${intPart}.${fracPart}`;
 }
 
-function parseToRaw(v: DecimalValue): bigint {
-  if (v instanceof FixedDecimal) return v.raw;
+function parseToRaw(v: number | string): bigint {
+  let s = typeof v === "number" ? v.toString() : v.trim();
   let s = typeof v === "number" ? v.toString() : v.trim();
   if (s === "") throw new Error("Cannot create a decimal from an empty string");
   if (/e/i.test(s)) s = Number(s).toFixed(SCALE); // normalize exponential notation
@@ -66,7 +66,7 @@ export class FixedDecimal {
 
   /** Mirrors decimal.js's `new Decimal(value)` usage throughout this codebase. */
   constructor(v: DecimalValue) {
-    this.raw = parseToRaw(v);
+    this.raw = v instanceof FixedDecimal ? v.raw : parseToRaw(v);
   }
 
   /** Builds an instance directly from a raw scaled BigInt via a round-trip through the
