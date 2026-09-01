@@ -50,8 +50,8 @@ datasource db {
   // `prisma migrate` / `prisma db push` need, since schema changes can't run through a
   // transaction pooler. See DEPLOYMENT.md for exactly where to copy each of these from
   // in the Supabase dashboard.
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
 model Entity {
