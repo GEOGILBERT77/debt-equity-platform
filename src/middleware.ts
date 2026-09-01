@@ -95,7 +95,7 @@ function withSecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
   res.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
   );
   return res;
 }
