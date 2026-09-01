@@ -1,0 +1,385 @@
+// Data model for the debt & equity platform.
+//
+// NOT VALIDATED IN THIS SANDBOX: the environment this was written in has no outbound
+// access to the npm registry, so `prisma` itself could not be installed here to run
+// `prisma validate` / `prisma generate` against this file. The syntax below was written
+// carefully against the Prisma schema reference, but run `npx prisma validate` yourself
+// as the very first step before building on it.
+//
+// Three design decisions worth flagging to whoever picks this up:
+//
+// 1. Instruments are polymorphic via a `type` enum + a JSON `terms` payload, not one
+//    table per instrument type. Cap tables have to render every instrument type in one
+//    list/one UI, and the "maintain flexibility for future functionality add-ons"
+//    requirement means new instrument types will get added after this ships — a rigid
+//    column-per-type model fights both of those. The calculation engine (src/lib/
+//    accounting) is what actually understands each terms shape; this schema just
+//    stores and versions it.
+//
+// 2. InstrumentTermVersion is append-only and mirrors modificationEngine.ts exactly —
+//    every modification is a new row with its own effectiveDate, never an UPDATE to an
+//    existing row. If you ever find code UPDATE-ing a row in this table, that's the
+//    architecture requirement being violated, not a valid shortcut.
+//
+// 3. Documents point at a `storageUrl` rather than storing file bytes in Postgres —
+//    per the earlier stack decision to buy the e-signature/redlining workflow (PandaDoc/
+//    DocuSign) rather than build one, this table is a pointer into that vendor's
+//    storage plus a status column, not a document store of its own.
+//
+// 4. Multi-tenancy is a join table (EntityAccess), not a `tenantId` column on every
+//    row. A user's access is to an ENTITY (and everything under it — stakeholders,
+//    instruments, schedules), not to individual rows, and one user can reasonably need
+//    access to more than one entity (an accountant serving several clients) — a single
+//    `tenantId` foreign key per table can't express that, but one join table checked
+//    once per request (src/lib/auth/access.ts) can. See User/EntityRole/EntityAccess
+//    below, and src/middleware.ts + every API route/page under src/app/ for where that
+//    check actually happens.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Supabase (and most managed Postgres providers used from a serverless host like
+  // Vercel) need two different connection strings: DATABASE_URL is the pooled
+  // connection (PgBouncer, port 6543, "?pgbouncer=true") that Prisma Client uses at
+  // runtime, since a serverless function can't hold a persistent connection the way a
+  // long-running server can; DIRECT_URL is the unpooled connection (port 5432) that
+  // `prisma migrate` / `prisma db push` need, since schema changes can't run through a
+  // transaction pooler. See DEPLOYMENT.md for exactly where to copy each of these from
+  // in the Supabase dashboard.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Entity {
+  id           String        @id @default(cuid())
+  name         String
+  /// The currency this entity reports in — every ReconciliationResult/AccountSummary
+  /// the reporting layer produces for this entity's instruments is grouped against
+  /// currencies relative to this one. Doesn't itself trigger any conversion; see the
+  /// scope note in src/lib/accounting/types.ts and the ASC 830-20 remeasurement engine
+  /// in fxTranslation.ts for the one place actual currency conversion happens.
+  reportingCurrency String   @default("USD")
+  createdAt    DateTime      @default(now())
+  stakeholders Stakeholder[]
+  instruments  Instrument[]
+  documents    Document[]
+  /// Who can see/edit this entity's data at all, and at what role — see User/
+  /// EntityAccess below and src/lib/auth/access.ts. An Entity with no EntityAccess
+  /// rows is unreachable by anyone through the app (not even its creator) — every
+  /// entity-creation code path must create the creator's OWNER row in the same
+  /// transaction as the Entity itself, never as a separate step.
+  access       EntityAccess[]
+}
+
+/// One real person who can log into this app — as distinct from a Stakeholder, which
+/// is a party to an instrument (an investor, an employee receiving options, a lender)
+/// and has no login of their own. A User and a Stakeholder can refer to the same real
+/// person without any relation between these two models; nothing in this schema links
+/// them, and nothing needs to.
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  /// "scrypt:<saltHex>:<hashHex>" — see src/lib/auth/passwordHashing.ts. Never a plain
+  /// password, and never anything this schema or the app could reverse.
+  passwordHash String
+  /// "Log out everywhere" counter (v0.20.0) — see src/lib/auth/session.ts's module doc
+  /// comment for the full design. Every session token issued at login carries the
+  /// `sessionVersion` that was current at the time; bumping this column (POST
+  /// /api/auth/logout-everywhere) instantly invalidates every OLDER token, since none
+  /// of them carry the new number, while a freshly-issued token (also returned by that
+  /// same endpoint) keeps the calling device logged in. Checked in
+  /// authGuard.ts's resolveUserFromToken, which already loads this row on every
+  /// authenticated request — not in src/middleware.ts, which stays database-free.
+  sessionVersion Int          @default(0)
+  createdAt    DateTime       @default(now())
+  access       EntityAccess[]
+  /// Reverse sides of the v0.19.0 audit-trail attribution columns — see
+  /// InstrumentTermVersion.createdByUserId and Correction.createdByUserId. Named
+  /// relations (not Prisma's default inferred name) purely for clarity, since a plain
+  /// unnamed `Correction[]`/`InstrumentTermVersion[]` here would read ambiguously next
+  /// to `access` above.
+  createdTermVersions InstrumentTermVersion[] @relation("TermVersionCreatedBy")
+  createdCorrections  Correction[]            @relation("CorrectionCreatedBy")
+}
+
+enum EntityRole {
+  /// Full read/write on this entity's data, AND can grant/revoke other users' access
+  /// to it (see POST /api/auth/users). Exactly one OWNER always exists per entity —
+  /// whoever created it — though more than one is allowed (e.g. a second partner).
+  OWNER
+  /// Full read/write on this entity's data, but cannot grant or revoke access for
+  /// anyone else. For a bookkeeper or associate who does real work on the entity but
+  /// shouldn't be deciding who else gets in.
+  EDITOR
+  /// Read-only — for an external reviewer, auditor, or client checking numbers without
+  /// being able to change anything.
+  VIEWER
+}
+
+/// The multi-tenancy join table: which users can reach which entities, and at what
+/// role. See src/lib/auth/access.ts for the role-ranking logic every entity-scoped
+/// route/page checks against before reading or writing. A user with no EntityAccess
+/// row for an entity gets a 404, not a 403 — this app doesn't confirm to an
+/// unauthorized user that an entity ID even exists (see access.ts's doc comment).
+model EntityAccess {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  entityId  String
+  entity    Entity     @relation(fields: [entityId], references: [id])
+  role      EntityRole
+  createdAt DateTime   @default(now())
+
+  @@unique([userId, entityId])
+  @@index([entityId])
+}
+
+enum StakeholderType {
+  INVESTOR
+  DEBT_HOLDER
+  EMPLOYEE
+  ADVISOR
+  ENTITY_HOLDER // another company acting as an investor or lender
+}
+
+model Stakeholder {
+  id          String          @id @default(cuid())
+  entityId    String
+  entity      Entity          @relation(fields: [entityId], references: [id])
+  type        StakeholderType
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  instruments Instrument[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([entityId])
+}
+
+enum InstrumentType {
+  STOCK_OPTION
+  RSU
+  SAR
+  WARRANT
+  CONVERTIBLE_NOTE
+  TERM_LOAN
+  REVOLVER
+  PIK_NOTE
+  PREFERRED_STOCK
+  COMMON_STOCK
+  /// Early-exercised stock options and restricted stock purchased subject to a
+  /// vesting-based repurchase right — see src/lib/accounting/restrictedStock.ts. Added
+  /// as its own type (v0.16.0) rather than a flag on STOCK_OPTION/COMMON_STOCK because
+  /// its balance-sheet presentation genuinely differs: cash received for unvested
+  /// shares sits in a liability (not issued equity) until the repurchase right lapses.
+  RESTRICTED_STOCK
+}
+
+enum InstrumentStatus {
+  ACTIVE
+  CANCELLED
+  CONVERTED
+  EXERCISED
+  REPAID
+  EXTINGUISHED
+}
+
+model Instrument {
+  id              String                   @id @default(cuid())
+  entityId        String
+  entity          Entity                   @relation(fields: [entityId], references: [id])
+  stakeholderId   String
+  stakeholder     Stakeholder              @relation(fields: [stakeholderId], references: [id])
+  type            InstrumentType
+  status          InstrumentStatus         @default(ACTIVE)
+  issueDate       DateTime
+  /// The currency this instrument's own face amounts and schedule are denominated in
+  /// (e.g. "EUR" for a euro-denominated term loan). Independent of the owning Entity's
+  /// reportingCurrency — a foreign-currency instrument is exactly the case
+  /// fxTranslation.ts's remeasurement engine exists for. Defaults to USD so existing
+  /// single-currency clients never have to set this.
+  currency        String                   @default("USD")
+  termVersions    InstrumentTermVersion[]
+  scheduleEntries ScheduleEntry[]
+  journalEntries  JournalEntry[]
+  corrections     Correction[]
+  documents       Document[]
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@index([entityId])
+  @@index([stakeholderId])
+}
+
+/// Append-only log of an instrument's terms over time. See modificationEngine.ts
+/// (InstrumentTimeline) — this table is that class's persistence, nothing more.
+/// Rows are only ever inserted, in increasing `effectiveDate` order, never updated.
+model InstrumentTermVersion {
+  id            String     @id @default(cuid())
+  instrumentId  String
+  instrument    Instrument @relation(fields: [instrumentId], references: [id])
+  effectiveDate DateTime
+  label         String
+  /// Type-specific terms (quantity, strike, vesting tranches, principal, rate, ...).
+  /// JSON rather than columns because each InstrumentType has a different shape, and
+  /// new shapes will be added after launch — see design note #1 at the top of this file.
+  terms         Json
+  /// Which User recorded this version — added in v0.19.0 for the compliance/audit-
+  /// trail report (src/lib/accounting/auditTrail.ts), which needs "who," not just
+  /// "what and when." NULLABLE, permanently, for two reasons: every row written before
+  /// this column existed has no value to backfill (there was nothing to derive it
+  /// from), and a direct-SQL insert (db/seed.sql, or a support fix via Supabase's Table
+  /// Editor) still won't set it. No `onDelete` behavior is specified deliberately —
+  /// see the identical note on Correction.createdByUserId below.
+  createdByUserId String?
+  createdByUser   User?      @relation("TermVersionCreatedBy", fields: [createdByUserId], references: [id])
+  createdAt     DateTime   @default(now())
+
+  @@index([instrumentId, effectiveDate])
+}
+
+/// One computed row from the accounting engine (vesting expense, interest expense,
+/// a fair-value remeasurement, ...). Written by the engine, read by every reporting
+/// feature — this table is the join point between src/lib/accounting and the UI.
+///
+/// Corrections (see the Correction model below) never delete or edit a row here —
+/// a restated period's OLD row gets `supersededByCorrectionId` set, and the NEW
+/// (corrected) row is inserted with `createdByCorrectionId` pointing at the same
+/// Correction. A report should filter `supersededByCorrectionId: null` for the current
+/// view; the full, unfiltered table is the ASC 250 audit trail of what was originally
+/// reported and what changed.
+model ScheduleEntry {
+  id                     String      @id @default(cuid())
+  instrumentId           String
+  instrument             Instrument  @relation(fields: [instrumentId], references: [id])
+  periodStart            DateTime
+  periodEnd              DateTime
+  label                  String
+  amount                 Decimal     @db.Decimal(18, 4)
+  endingBalance          Decimal?    @db.Decimal(18, 4)
+  /// The currency `amount`/`endingBalance` are denominated in — mirrors
+  /// ScheduleRow.currency in src/lib/accounting/types.ts. Defaults to USD; for an
+  /// FX-remeasurement row (fxTranslation.ts) this is the REPORTING currency, since
+  /// that's what the row's amount/endingBalance are actually expressed in, not the
+  /// instrument's own face currency.
+  currency               String      @default("USD")
+  ascReference           String?
+  /// Which InstrumentTermVersion.label produced this row — carries the modification
+  /// audit trail through to the schedule itself, matching modificationEngine.ts's
+  /// `termVersionLabel` metadata field.
+  termVersionLabel       String?
+  meta                   Json?
+  supersededByCorrectionId String?
+  supersededByCorrection Correction? @relation("ScheduleSuperseded", fields: [supersededByCorrectionId], references: [id])
+  createdByCorrectionId  String?
+  createdByCorrection    Correction? @relation("ScheduleCreated", fields: [createdByCorrectionId], references: [id])
+  createdAt              DateTime    @default(now())
+
+  @@index([instrumentId, periodEnd])
+}
+
+/// See the audit-trail note on ScheduleEntry above — the same supersede/create pattern
+/// applies here for restated journal entries.
+model JournalEntry {
+  id                     String        @id @default(cuid())
+  instrumentId           String?
+  instrument             Instrument?   @relation(fields: [instrumentId], references: [id])
+  date                   DateTime
+  description            String
+  ascReference           String?
+  /// Mirrors JournalEntry.currency in src/lib/accounting/types.ts — a single entry is
+  /// always one currency (see that field's doc comment for why). Defaults to USD.
+  currency               String        @default("USD")
+  lines                  JournalLine[]
+  supersededByCorrectionId String?
+  supersededByCorrection Correction?   @relation("JournalSuperseded", fields: [supersededByCorrectionId], references: [id])
+  createdByCorrectionId  String?
+  createdByCorrection    Correction?   @relation("JournalCreated", fields: [createdByCorrectionId], references: [id])
+  createdAt              DateTime      @default(now())
+
+  @@index([instrumentId, date])
+}
+
+enum CorrectionElection {
+  PROSPECTIVE
+  RETROSPECTIVE
+}
+
+/// One record per error correction, per correctionService.ts. `previewSnapshot` stores
+/// exactly what was shown to the person who made the materiality call (the
+/// CorrectionPreview from previewCorrection) — so "why was this booked this way" is
+/// always answerable from the database, not just from application logs.
+model Correction {
+  id               String             @id @default(cuid())
+  instrumentId     String
+  instrument       Instrument         @relation(fields: [instrumentId], references: [id])
+  discoveredDate   DateTime
+  reason           String
+  election         CorrectionElection
+  previewSnapshot  Json
+  scheduleSuperseded ScheduleEntry[]  @relation("ScheduleSuperseded")
+  scheduleCreated    ScheduleEntry[]  @relation("ScheduleCreated")
+  journalSuperseded  JournalEntry[]   @relation("JournalSuperseded")
+  journalCreated     JournalEntry[]   @relation("JournalCreated")
+  /// Who committed this correction — same v0.19.0 addition, same nullability
+  /// reasoning, as InstrumentTermVersion.createdByUserId above. No `onDelete` behavior
+  /// is specified on purpose: a Correction is a permanent accounting/audit record that
+  /// must never disappear or fail to delete just because the user who happened to
+  /// record it is later removed. The default (NoAction, enforced by the same "no user
+  /// deletion flow exists yet" honest gap noted on EntityAccess) is acceptable for now;
+  /// a real user-offboarding flow, whenever it's built, needs to null this out rather
+  /// than delete the User row out from under a live foreign key.
+  createdByUserId  String?
+  createdByUser    User?              @relation("CorrectionCreatedBy", fields: [createdByUserId], references: [id])
+  createdAt        DateTime           @default(now())
+
+  @@index([instrumentId])
+}
+
+model JournalLine {
+  id             String       @id @default(cuid())
+  journalEntryId String
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id])
+  account        String
+  debit          Decimal?     @db.Decimal(18, 4)
+  credit         Decimal?     @db.Decimal(18, 4)
+  memo           String?
+
+  @@index([journalEntryId])
+}
+
+/// A pointer into the e-signature/redlining vendor's storage (PandaDoc/DocuSign), plus
+/// a status column — not a document store. See design note #3 at the top of this file.
+model Document {
+  id           String            @id @default(cuid())
+  entityId     String
+  entity       Entity            @relation(fields: [entityId], references: [id])
+  instrumentId String?
+  instrument   Instrument?       @relation(fields: [instrumentId], references: [id])
+  title        String
+  versions     DocumentVersion[]
+  createdAt    DateTime          @default(now())
+
+  @@index([entityId])
+  @@index([instrumentId])
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id])
+  versionNumber Int
+  /// URL/reference into the vendor's storage — this is NOT the file itself.
+  storageUrl    String
+  /// draft | sent | redlined | signed | executed — kept as a plain string rather than
+  /// an enum since the exact vendor's status vocabulary is what actually governs this.
+  status        String
+  createdAt     DateTime @default(now())
+
+  @@unique([documentId, versionNumber])
+}

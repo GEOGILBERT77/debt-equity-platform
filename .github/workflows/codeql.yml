@@ -1,0 +1,46 @@
+# Automated static security scanning (v0.20.0) — closes the "Automated static security
+# scanning in CI (e.g. GitHub CodeQL)" item in the task-status spreadsheet's Security
+# Hardening area. CodeQL is free on public repos and on private repos owned by an
+# organization with GitHub Advanced Security (or any private repo, under GitHub's
+# current free tier for CodeQL — check your plan if this doesn't run for you), and
+# needs no separate account or secret: it runs as a GitHub Actions workflow using the
+# built-in GITHUB_TOKEN. Scans on every push/PR to main, plus a weekly scheduled run so
+# a vulnerability newly discovered in CodeQL's own rule set still gets caught on code
+# that hasn't changed recently.
+name: "CodeQL"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "17 3 * * 1" # Mondays, 03:17 UTC — an arbitrary off-peak time, not a magic constant
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      # No explicit build step — CodeQL's javascript-typescript analysis works on
+      # source directly and doesn't need `next build`/`tsc` to succeed first. Add a
+      # real build step here once this project's CI actually needs one (see the
+      # Deployment & Infra "CI/CD pipeline" item — this file is scoped to security
+      # scanning only, not a full pipeline).
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

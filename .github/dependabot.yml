@@ -1,0 +1,26 @@
+# Dependency vulnerability scanning (v0.20.0) — closes the "Dependency vulnerability
+# scanning (GitHub Dependabot or similar)" item in the task-status spreadsheet's
+# Security Hardening area. Free on GitHub; this file is the only setup it needs beyond
+# the repo actually living on GitHub (see DEPLOYMENT.md) — no account or secret
+# required. Opens a pull request automatically when a dependency has a known
+# vulnerability or a new version available, on the schedule below.
+version: 2
+updates:
+  # npm (package.json) — this project's only package ecosystem today.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Security-relevant updates are still opened immediately regardless of this
+    # schedule — "weekly" only paces routine version-bump PRs, not vulnerability fixes.
+    labels:
+      - "dependencies"
+
+  # GitHub Actions workflow files themselves (e.g. .github/workflows/codeql.yml, and
+  # any CI/CD pipeline added later per the Deployment & Infra area) are their own
+  # dependency surface — a pinned action version can carry a vulnerability too.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
