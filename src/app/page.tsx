@@ -16,7 +16,22 @@ import { EntityRowActions } from "@/app/components/EntityRowActions";
  * inline rename/delete for an entity (EntityRowActions.tsx) — see that component's doc
  * comment for the access-level and foreign-key-safety reasoning.
  *
- * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/: no
+ * The row of calculator links that used to live directly on this page moved into the
+ * top nav bar's "New transactions" and "GAAP reports" menus (see NavBar.tsx) once that
+ * existed — this page went back to being just the entity directory plus the two
+ * "coming soon" sections below, rather than duplicating navigation that's now global.
+ *
+ * ERP FEED / EMAIL DOCUMENTS (both "Not connected" below): these are placeholder
+ * sections for two real, requested features that need a vendor decision and real
+ * integration engineering before they can show anything — neither is faked with
+ * sample data, since that would be more misleading than an honest empty state. See
+ * INTEGRATIONS.md for the architectural gaps (no credential storage, no background
+ * job runner, no webhook receiver) that block ANY vendor connection today, not just
+ * these two specifically — that document is the right starting point once a specific
+ * ERP vendor or an inbound-email provider (e.g. Postmark/Mailgun's inbound parse) is
+ * chosen.
+ *
+ * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app: no
  * installed Next.js/React/@prisma-client here (see src/lib/db.ts).
  */
 export default async function HomePage() {
@@ -41,41 +56,25 @@ export default async function HomePage() {
       <p>
         <Link href="/entities/new" style={{ ...buttonLinkStyle }}>
           + New entity
-        </Link>{" "}
-        <Link href="/reports/tax" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Tax filing calculators
-        </Link>{" "}
-        <Link href="/reports/settlement" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Option/RSU settlement calculator
-        </Link>{" "}
-        <Link href="/reports/debt-modification" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Debt modification/extinguishment calculator
-        </Link>{" "}
-        <Link href="/reports/beneficial-conversion-feature" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Beneficial conversion feature calculator
-        </Link>{" "}
-        <Link href="/reports/safe" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          SAFE calculator
-        </Link>{" "}
-        <Link href="/reports/eps" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Two-class EPS calculator
-        </Link>{" "}
-        <Link href="/reports/troubled-debt-restructuring" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Troubled debt restructuring calculator
-        </Link>{" "}
-        <Link href="/reports/espp" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          ESPP calculator
-        </Link>{" "}
-        <Link href="/reports/nonemployee-awards" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Nonemployee award calculator
-        </Link>{" "}
-        <Link href="/reports/equity-comp-disclosures" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Equity comp footnote disclosures
-        </Link>{" "}
-        <Link href="/reports/embedded-derivative-bifurcation" style={{ ...buttonLinkStyle, background: "#fff" }}>
-          Embedded derivative bifurcation
         </Link>
       </p>
+
+      <div style={feedSectionStyle}>
+        <h2 style={{ marginBottom: "0.25rem" }}>ERP feed</h2>
+        <p style={notConnectedTextStyle}>
+          Not connected. Once a general-ledger vendor (QuickBooks Online, Xero, NetSuite — see
+          INTEGRATIONS.md) is chosen and wired up, new items synced from it would appear here.
+        </p>
+      </div>
+
+      <div style={feedSectionStyle}>
+        <h2 style={{ marginBottom: "0.25rem" }}>Documents received by email</h2>
+        <p style={notConnectedTextStyle}>
+          Not connected. Once an inbound-email provider is chosen and wired up, documents (signed
+          agreements, 409A reports, statements) received at a dedicated address would appear here for
+          review and filing.
+        </p>
+      </div>
 
       <h2>Entities</h2>
       {entities.length === 0 && (
@@ -128,3 +127,11 @@ const buttonLinkStyle: React.CSSProperties = {
   textDecoration: "none",
   color: "inherit",
 };
+const feedSectionStyle: React.CSSProperties = {
+  border: "1px dashed #ccc",
+  borderRadius: 4,
+  padding: "0.75rem 1rem",
+  margin: "1rem 0",
+  background: "#fafafa",
+};
+const notConnectedTextStyle: React.CSSProperties = { color: "#888", fontSize: "0.9rem", margin: 0 };

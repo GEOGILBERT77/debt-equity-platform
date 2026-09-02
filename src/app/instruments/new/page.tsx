@@ -14,7 +14,7 @@ import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
 export default async function NewInstrumentPage({
   searchParams,
 }: {
-  searchParams: { entityId?: string; stakeholderId?: string };
+  searchParams: { entityId?: string; stakeholderId?: string; type?: string };
 }) {
   const entityId = searchParams.entityId;
   if (!entityId) {
@@ -46,6 +46,7 @@ export default async function NewInstrumentPage({
         entityId={entityId}
         stakeholders={stakeholders.map((s) => ({ id: s.id, name: s.name, type: s.type }))}
         initialStakeholderId={searchParams.stakeholderId}
+        initialType={searchParams.type}
       />
     </main>
   );

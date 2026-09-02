@@ -54,21 +54,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: { en
 
   return (
     <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+      {/* The rest of this page's sibling reports and every standalone ASC calculator moved into the top nav
+          bar's "GAAP reports" menu (see NavBar.tsx) — this breadcrumb now only keeps the two links that are
+          specific to THIS report/entity rather than duplicating global navigation. */}
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
-        <Link href={`/captable?entityId=${entityId}`}>Cap table</Link> {" · "}
-        <Link href={`/reports/financial-statements?entityId=${entityId}`}>Financial statements</Link> {" · "}
-        <Link href={`/reports/audit-trail?entityId=${entityId}`}>Audit trail</Link> {" · "}
-        <Link href="/reports/settlement">Option exercise / RSU settlement calculator</Link> {" · "}
-        <Link href="/reports/debt-modification">Debt modification / extinguishment calculator</Link> {" · "}
-        <Link href="/reports/beneficial-conversion-feature">Beneficial conversion feature calculator</Link> {" · "}
-        <Link href="/reports/safe">SAFE calculator</Link> {" · "}
-        <Link href="/reports/eps">Two-class EPS calculator</Link> {" · "}
-        <Link href="/reports/troubled-debt-restructuring">Troubled debt restructuring calculator</Link> {" · "}
-        <Link href="/reports/espp">ESPP calculator</Link> {" · "}
-        <Link href="/reports/nonemployee-awards">Nonemployee award calculator</Link> {" · "}
-        <Link href="/reports/equity-comp-disclosures">Equity comp footnote disclosures</Link> {" · "}
-        <Link href="/reports/embedded-derivative-bifurcation">Embedded derivative bifurcation</Link>
+        <Link href={`/captable?entityId=${entityId}`}>Cap table</Link>
       </p>
       <h1>Journal entries report</h1>
       <p style={{ color: "#555" }}>

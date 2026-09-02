@@ -81,18 +81,33 @@ type InstrumentType = (typeof INSTRUMENT_TYPES)[number];
  * path, just from the server rather than earlier client-side — closing that gap for
  * real needs the schema-library swap `termsValidation.ts`'s own doc comment describes.
  */
+/** Type guard for the `?type=` query param the top nav's "New Transactions" dropdown
+ * links with (see NavBar.tsx) — narrows an arbitrary string to a real InstrumentType,
+ * falling back to the previous default (STOCK_OPTION) for anything else (a stale
+ * bookmark, a typo'd URL, a type this form doesn't know about) rather than crashing. */
+function isInstrumentType(value: string | undefined): value is InstrumentType {
+  return !!value && (INSTRUMENT_TYPES as readonly string[]).includes(value);
+}
+
 export function NewInstrumentForm({
   entityId,
   stakeholders,
   initialStakeholderId,
+  initialType,
 }: {
   entityId: string;
   stakeholders: { id: string; name: string; type: string }[];
   initialStakeholderId?: string;
+  /** Preselects the "Instrument type" dropdown — set from `?type=...` (see
+   * instruments/new/page.tsx and NavBar.tsx's hierarchical "New Transactions" menu),
+   * so picking "Equity > Stock option" from the nav lands here with STOCK_OPTION
+   * already selected instead of always defaulting to it regardless of what was
+   * actually clicked. */
+  initialType?: string;
 }) {
   const router = useRouter();
   const [stakeholderId, setStakeholderId] = useState(initialStakeholderId ?? stakeholders[0]?.id ?? "");
-  const [type, setType] = useState<InstrumentType>("STOCK_OPTION");
+  const [type, setType] = useState<InstrumentType>(isInstrumentType(initialType) ? initialType : "STOCK_OPTION");
   // Deliberately not today's date: the TERM_LOAN/CONVERTIBLE_NOTE defaults each assume
   // exactly one annual period has elapsed since issuance (one cashFlows entry) —
   // issuing "today" would mean zero elapsed periods, immediately mismatching that
