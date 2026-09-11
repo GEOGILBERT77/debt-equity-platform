@@ -64,7 +64,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to generate the letter" }, { status: 400 });
   }
 
-  return new NextResponse(pdf, {
+  // Buffer isn't directly assignable to NextResponse's BodyInit under this project's
+  // TypeScript config (see form-3921/form-3922's identical fix) — Uint8Array is.
+  return new NextResponse(new Uint8Array(pdf), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",

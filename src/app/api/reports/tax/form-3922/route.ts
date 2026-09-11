@@ -78,7 +78,9 @@ export async function POST(req: NextRequest) {
   }
 
   const pdf = buildForm3922Pdf(result.data);
-  return new NextResponse(pdf, {
+  // Buffer isn't directly assignable to NextResponse's BodyInit under this project's
+  // TypeScript config — Uint8Array is.
+  return new NextResponse(new Uint8Array(pdf), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
