@@ -682,7 +682,7 @@ model DocumentVersion {
 model OptionExerciseEvent {
   id             String     @id @default(cuid())
   instrumentId   String
-  instrument     Instrument @relation(fields: [instrumentId], references: [id], onDelete: RESTRICT, onUpdate: CASCADE)
+  instrument     Instrument @relation(fields: [instrumentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   exerciseDate   DateTime
   quantityExercised            Decimal @db.Decimal(24, 6)
   exercisePricePerShare        Decimal @db.Decimal(24, 6)
@@ -720,7 +720,7 @@ model OptionExerciseEvent {
 model ShareDispositionEvent {
   id               String              @id @default(cuid())
   exerciseEventId  String
-  exerciseEvent    OptionExerciseEvent @relation(fields: [exerciseEventId], references: [id], onDelete: RESTRICT, onUpdate: CASCADE)
+  exerciseEvent    OptionExerciseEvent @relation(fields: [exerciseEventId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   dispositionDate  DateTime
   quantitySold     Decimal @db.Decimal(24, 6)
   salePricePerShare Decimal @db.Decimal(24, 6)
@@ -783,14 +783,14 @@ enum TaxFilingStatus {
 model TaxFilingRecord {
   id                 String            @id @default(cuid())
   entityId           String
-  entity             Entity            @relation(fields: [entityId], references: [id], onDelete: RESTRICT, onUpdate: CASCADE)
+  entity             Entity            @relation(fields: [entityId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   filingType         TaxFilingType
   /// The calendar year the obligation pertains to (the year of exercise/disposition
   /// for FORM_3921/W2_* — Form 3921 and W-2 are both annual filings even though the
   /// triggering event has a specific date within that year).
   taxYear            Int
   exerciseEventId    String?
-  exerciseEvent      OptionExerciseEvent? @relation(fields: [exerciseEventId], references: [id], onDelete: SetNull, onUpdate: CASCADE)
+  exerciseEvent      OptionExerciseEvent? @relation(fields: [exerciseEventId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   /// ELECTION_83B_DEADLINE traces back to the GRANT itself (a RESTRICTED_STOCK
   /// instrument's issue/transfer date starts the 30-day clock), not to an
   /// OptionExerciseEvent — there's no exercise involved in an 83(b) election at all.
@@ -798,7 +798,7 @@ model TaxFilingRecord {
   /// instead. Same "degrade gracefully" ON DELETE SET NULL as exerciseEventId above,
   /// for the same reason (User.defaultEntityId's doc comment).
   instrumentId       String?
-  instrument         Instrument?       @relation(fields: [instrumentId], references: [id], onDelete: SetNull, onUpdate: CASCADE)
+  instrument         Instrument?       @relation(fields: [instrumentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   status             TaxFilingStatus   @default(PENDING)
   filedDate          DateTime?
   filedByUserId      String?
