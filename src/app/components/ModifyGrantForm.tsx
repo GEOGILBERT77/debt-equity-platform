@@ -18,10 +18,17 @@ type GrantType = "STOCK_OPTION" | "RSU" | "RESTRICTED_STOCK";
 
 /** One editable-state shape big enough for all three grant types this form handles —
  * `purchasePricePerShare` is only meaningful (and only sent) for RESTRICTED_STOCK,
- * `strikePrice` only for STOCK_OPTION; each is simply ignored by the other types'
- * `toXTerms` converter. Simpler than a discriminated union here since every field a
- * ServiceConditionGrant needs is shared across all three anyway. */
-type EditableGrantState = RestrictedStockState & { strikePrice: string };
+ * `strikePrice`/`isIncentiveStockOption` only for STOCK_OPTION; each is simply ignored
+ * by the other types' `toXTerms` converter. Simpler than a discriminated union here
+ * since every field a ServiceConditionGrant needs is shared across all three anyway.
+ *
+ * v0.37.0 — `isIncentiveStockOption` added alongside `strikePrice` when
+ * StockOptionGrantState (TypeForms.tsx) picked up that same field: StockOptionGrantForm
+ * now requires it, so modifying an existing STOCK_OPTION grant needs it here too, or
+ * `toStockOptionGrantTerms(state)`/`<StockOptionGrantForm value={state} .../>` below
+ * fail to type-check. Caught by Vercel's real compiler, not this sandbox — same
+ * pattern as every other JsonValue-adjacent type mismatch this app has hit. */
+type EditableGrantState = RestrictedStockState & { strikePrice: string; isIncentiveStockOption: boolean };
 
 /** Turns the instrument's CURRENTLY STORED terms (raw JSON, as read from
  * InstrumentTermVersion.terms) into editable form state — the mirror image of
@@ -49,6 +56,10 @@ function hydrateFromTerms(terms: unknown): EditableGrantState {
     servicePeriodEndDate: String(t.servicePeriodEndDate ?? ""),
     purchasePricePerShare: String(t.purchasePricePerShare ?? "0"),
     strikePrice: String(t.strikePrice ?? ""),
+    // Preserves the grant's existing ISO/NQ status when you open it to modify
+    // something else — without this, every STOCK_OPTION modification would silently
+    // reset a real ISO grant back to NQ the moment the form re-serializes it.
+    isIncentiveStockOption: Boolean(t.isIncentiveStockOption),
   };
 }
 
