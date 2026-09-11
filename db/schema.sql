@@ -42,6 +42,10 @@ CREATE TYPE "InstrumentType" AS ENUM ('STOCK_OPTION', 'RSU', 'SAR', 'WARRANT', '
 CREATE TYPE "InstrumentStatus" AS ENUM ('ACTIVE', 'CANCELLED', 'CONVERTED', 'EXERCISED', 'REPAID', 'EXTINGUISHED');
 CREATE TYPE "CorrectionElection" AS ENUM ('PROSPECTIVE', 'RETROSPECTIVE');
 CREATE TYPE "EntityRole" AS ENUM ('OWNER', 'EDITOR', 'VIEWER');
+-- v0.33.0 — see prisma/schema.prisma's doc comments on these two enums and on
+-- TaxFilingRecord for the full reasoning behind each value.
+CREATE TYPE "TaxFilingType" AS ENUM ('FORM_3921', 'W2_NSO_EXERCISE_INCOME', 'W2_ISO_DISQUALIFYING_DISPOSITION', 'ELECTION_83B_DEADLINE');
+CREATE TYPE "TaxFilingStatus" AS ENUM ('PENDING', 'FILED', 'NOT_REQUIRED');
 
 -- =============================================================================
 -- User / EntityAccess (multi-tenancy — see prisma/schema.prisma's design note #4)
@@ -65,8 +69,31 @@ CREATE TABLE "Entity" (
   "id" TEXT PRIMARY KEY,
   "name" TEXT NOT NULL,
   "reportingCurrency" TEXT NOT NULL DEFAULT 'USD',
+  -- v0.33.0 — the filer's own identification for tax/compliance filings this entity
+  -- generates on its stakeholders' behalf (Form 3921's "Transferor corporation" name/
+  -- address/EIN box). NULLABLE: every entity that exists before this feature does has
+  -- neither, and optionTaxCompliance.ts refuses to assemble a Form 3921 (rather than
+  -- silently leaving the EIN blank on a real tax document) when either is missing.
+  "employerIdentificationNumber" TEXT,
+  "address" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- v0.21.0 — "default entity" (see prisma/schema.prisma's doc comment on
+-- User.defaultEntityId for why this exists). Added here via ALTER TABLE rather than as
+-- a column on the CREATE TABLE "User" statement above, purely because "User" is
+-- created before "Entity" exists in this file (EntityAccess needs User first) and this
+-- column's foreign key needs "Entity" to already exist. ON DELETE SET NULL — the one
+-- FK in this whole file that isn't RESTRICT, deliberately: losing your default because
+-- that entity was deleted should degrade gracefully, not block the deletion.
+--
+-- IF YOUR DATABASE ALREADY EXISTS (i.e. you ran this file once already, before this
+-- column was added): running the whole file again will fail on the earlier CREATE
+-- TABLE statements ("relation already exists"). Instead, run ONLY this one statement
+-- by itself against your live database — see db/migrations/2026-09-add-default-entity.sql,
+-- which contains just this line for exactly that purpose (Supabase's SQL Editor is
+-- where a user of this app would paste it).
+ALTER TABLE "User" ADD COLUMN "defaultEntityId" TEXT REFERENCES "Entity"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- =============================================================================
 -- EntityAccess — who can reach this Entity, and at what role. RESTRICT on both FKs
@@ -95,6 +122,20 @@ CREATE TABLE "Stakeholder" (
   "email" TEXT,
   "phone" TEXT,
   "address" TEXT,
+  -- v0.33.0 — SSN (individual) or EIN (a business ADVISOR/ENTITY_HOLDER) for tax/
+  -- compliance filings generated on this stakeholder's behalf (Form 3921's recipient
+  -- TIN box). NULLABLE for every stakeholder recorded before this existed.
+  --
+  -- SECURITY — READ BEFORE DEPLOYING: this column is a government tax-ID number
+  -- stored as PLAIN TEXT, same as every other free-text column on this table. That is
+  -- NOT an acceptable production posture for an SSN. Before this column is actually
+  -- populated with real data outside a sandbox/demo, add field-level encryption at
+  -- rest (e.g. pgcrypto's pgp_sym_encrypt/decrypt, or application-layer encryption
+  -- before the value reaches this database at all) and restrict which roles/endpoints
+  -- can read it back in full. This migration deliberately does NOT implement that —
+  -- it's a deployment/infra decision (which KMS, which access-control layer) that
+  -- belongs to whoever operates the real database, not something to guess at here.
+  "taxIdNumber" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -232,5 +273,187 @@ CREATE TABLE "DocumentVersion" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE ("documentId", "versionNumber")
 );
+
+-- =============================================================================
+-- AmortizationScheduleApproval / AmortizationScheduleRow (v0.22.0) — the full,
+-- end-to-end, MONTHLY projected amortization table for one instrument, approved once
+-- as the record of that grant's accounting treatment. See
+-- prisma/schema.prisma's doc comment on AmortizationScheduleApproval for the full
+-- reasoning, especially why this is deliberately separate from ScheduleEntry (a
+-- projection saved at approval time vs. what's actually been recognized/booked as of
+-- a real date).
+-- =============================================================================
+CREATE TABLE "AmortizationScheduleApproval" (
+  "id" TEXT PRIMARY KEY,
+  "instrumentId" TEXT NOT NULL REFERENCES "Instrument"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "sourceTermVersionId" TEXT NOT NULL REFERENCES "InstrumentTermVersion"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "approvedByUserId" TEXT REFERENCES "User"("id"),
+  "approvedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "AmortizationScheduleApproval_instrumentId_idx" ON "AmortizationScheduleApproval"("instrumentId");
+
+CREATE TABLE "AmortizationScheduleRow" (
+  "id" TEXT PRIMARY KEY,
+  "approvalId" TEXT NOT NULL REFERENCES "AmortizationScheduleApproval"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "periodStart" TIMESTAMP(3) NOT NULL,
+  "periodEnd" TIMESTAMP(3) NOT NULL,
+  "label" TEXT NOT NULL,
+  "amount" NUMERIC(18,4) NOT NULL,
+  "endingBalance" NUMERIC(18,4),
+  "currency" TEXT NOT NULL DEFAULT 'USD'
+);
+CREATE INDEX "AmortizationScheduleRow_approvalId_periodEnd_idx" ON "AmortizationScheduleRow"("approvalId", "periodEnd");
+
+-- =============================================================================
+-- OptionExerciseEvent / ShareDispositionEvent / TaxFilingRecord (v0.33.0) — stock
+-- option tax/compliance reporting. See src/lib/accounting/optionTaxCompliance.ts and
+-- prisma/schema.prisma's doc comments on each of these three models for the full
+-- reasoning. Created here, after Instrument/User/Entity above, since all three of
+-- these tables reference one of those.
+-- =============================================================================
+CREATE TABLE "OptionExerciseEvent" (
+  "id" TEXT PRIMARY KEY,
+  "instrumentId" TEXT NOT NULL REFERENCES "Instrument"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "exerciseDate" TIMESTAMP(3) NOT NULL,
+  "quantityExercised" NUMERIC(24,6) NOT NULL,
+  "exercisePricePerShare" NUMERIC(24,6) NOT NULL,
+  -- Fair market value per share ON THE EXERCISE DATE — drives the ISO bargain-element
+  -- AMT preference (taxElections.ts's computeIsoExerciseAmtPreference) and Form 3921
+  -- Box 4. NOT the same figure as InstrumentTermVersion's grant-date fair value.
+  "fairMarketValuePerShareAtExercise" NUMERIC(24,6) NOT NULL,
+  "recordedByUserId" TEXT REFERENCES "User"("id"),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "OptionExerciseEvent_instrumentId_idx" ON "OptionExerciseEvent"("instrumentId");
+CREATE INDEX "OptionExerciseEvent_exerciseDate_idx" ON "OptionExerciseEvent"("exerciseDate");
+
+CREATE TABLE "ShareDispositionEvent" (
+  "id" TEXT PRIMARY KEY,
+  "exerciseEventId" TEXT NOT NULL REFERENCES "OptionExerciseEvent"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "dispositionDate" TIMESTAMP(3) NOT NULL,
+  "quantitySold" NUMERIC(24,6) NOT NULL,
+  "salePricePerShare" NUMERIC(24,6) NOT NULL,
+  "recordedByUserId" TEXT REFERENCES "User"("id"),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "ShareDispositionEvent_exerciseEventId_idx" ON "ShareDispositionEvent"("exerciseEventId");
+
+CREATE TABLE "TaxFilingRecord" (
+  "id" TEXT PRIMARY KEY,
+  "entityId" TEXT NOT NULL REFERENCES "Entity"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "filingType" "TaxFilingType" NOT NULL,
+  -- The calendar year the obligation pertains to (year of exercise/disposition for
+  -- FORM_3921/W2_* — both annual filings even though the triggering event has a
+  -- specific date within that year).
+  "taxYear" INTEGER NOT NULL,
+  "exerciseEventId" TEXT REFERENCES "OptionExerciseEvent"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  -- ELECTION_83B_DEADLINE traces back to the GRANT itself (a RESTRICTED_STOCK
+  -- instrument's issue/transfer date starts the 30-day clock) — there's no exercise
+  -- involved. NULL for every other filingType. Two ELECTION_83B_DEADLINE rows for the
+  -- same entity/year but different instruments (exerciseEventId NULL on both) do NOT
+  -- collide on the UNIQUE constraint below — standard SQL NULL-is-never-equal-to-NULL
+  -- semantics, confirmed against a real Postgres 16 instance in db/validate.sql.
+  "instrumentId" TEXT REFERENCES "Instrument"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "status" "TaxFilingStatus" NOT NULL DEFAULT 'PENDING',
+  "filedDate" TIMESTAMP(3),
+  "filedByUserId" TEXT REFERENCES "User"("id"),
+  "notes" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "TaxFilingRecord_entityId_idx" ON "TaxFilingRecord"("entityId");
+CREATE INDEX "TaxFilingRecord_exerciseEventId_idx" ON "TaxFilingRecord"("exerciseEventId");
+CREATE INDEX "TaxFilingRecord_instrumentId_idx" ON "TaxFilingRecord"("instrumentId");
+-- Two PARTIAL unique indexes, not one combined UNIQUE(...), because standard SQL
+-- treats every NULL as distinct from every other NULL: exactly one of exerciseEventId/
+-- instrumentId is ever set on a given row (see each column's doc comment above), so a
+-- plain multi-column UNIQUE across both would never actually catch a duplicate — the
+-- "other" column would be NULL on both rows being compared, and NULL <> NULL always.
+-- These two indexes instead each enforce dedup only among the rows where their own
+-- column is actually populated — exactly the guarantee this table needs. See
+-- db/validate.sql for the representative-data proof (both a same-exercise duplicate
+-- and a same-instrument duplicate are correctly rejected; two different instruments'
+-- 83(b) deadlines, both with exerciseEventId NULL, are correctly allowed to coexist).
+CREATE UNIQUE INDEX "TaxFilingRecord_exercise_dedupe_idx" ON "TaxFilingRecord" ("entityId", "filingType", "taxYear", "exerciseEventId") WHERE "exerciseEventId" IS NOT NULL;
+CREATE UNIQUE INDEX "TaxFilingRecord_instrument_dedupe_idx" ON "TaxFilingRecord" ("entityId", "filingType", "taxYear", "instrumentId") WHERE "instrumentId" IS NOT NULL;
+
+-- =============================================================================
+-- Stakeholder/investor self-service portal (v0.35.0)
+-- =============================================================================
+-- A fully separate identity system from User/EntityAccess above — see
+-- StakeholderUser's doc comment in prisma/schema.prisma for the full design and why
+-- a Stakeholder row doesn't just get a password column directly (one real person can
+-- be a stakeholder of more than one Entity, and needs one login across all of them).
+
+CREATE TABLE "StakeholderUser" (
+  "id" TEXT PRIMARY KEY,
+  "email" TEXT NOT NULL UNIQUE,
+  -- Same "scrypt:<saltHex>:<hashHex>" format as "User"."passwordHash". NULLABLE: a row
+  -- can exist before any password is set (created the moment an admin first invites
+  -- this email) — see POST /api/portal/accept-invite.
+  "passwordHash" TEXT,
+  "sessionVersion" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE "StakeholderAccess" (
+  "id" TEXT PRIMARY KEY,
+  "stakeholderUserId" TEXT NOT NULL REFERENCES "StakeholderUser"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "stakeholderId" TEXT NOT NULL REFERENCES "Stakeholder"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- v0.36.0 — see this column's doc comment in prisma/schema.prisma: when true, this
+  -- access grant sees the entity's full cap table on the portal instead of just this
+  -- one stakeholder's own holdings ("board member portal" access).
+  "boardObserver" BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE ("stakeholderUserId", "stakeholderId")
+);
+CREATE INDEX "StakeholderAccess_stakeholderId_idx" ON "StakeholderAccess"("stakeholderId");
+
+CREATE TABLE "PortalInvite" (
+  "id" TEXT PRIMARY KEY,
+  "stakeholderId" TEXT NOT NULL REFERENCES "Stakeholder"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  -- SHA-256 hex of the raw invite token — only the hash is ever stored, same
+  -- at-rest-leak reasoning as password hashing. See portalInvite.ts.
+  "tokenHash" TEXT NOT NULL UNIQUE,
+  "createdByUserId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "expiresAt" TIMESTAMP(3) NOT NULL,
+  "usedAt" TIMESTAMP(3),
+  "acceptedByUserId" TEXT REFERENCES "StakeholderUser"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- v0.36.0 — carried onto the resulting StakeholderAccess.boardObserver at
+  -- acceptance time. See that column's doc comment.
+  "grantsBoardObserverAccess" BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX "PortalInvite_stakeholderId_idx" ON "PortalInvite"("stakeholderId");
+
+-- =============================================================================
+-- Board approval / consent record-keeping (v0.36.0)
+-- =============================================================================
+-- A governance record, deliberately NOT a workflow gate — see BoardConsent's doc
+-- comment in prisma/schema.prisma for the full reasoning (this table is read by
+-- nothing in the accounting engine, cap table rollup, or close workflow).
+
+CREATE TYPE "BoardConsentType" AS ENUM ('WRITTEN_CONSENT', 'BOARD_MEETING');
+
+CREATE TABLE "BoardConsent" (
+  "id" TEXT PRIMARY KEY,
+  "entityId" TEXT NOT NULL REFERENCES "Entity"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "title" TEXT NOT NULL,
+  "description" TEXT NOT NULL,
+  "consentType" "BoardConsentType" NOT NULL,
+  "decisionDate" TIMESTAMP(3) NOT NULL,
+  "createdByUserId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "BoardConsent_entityId_idx" ON "BoardConsent"("entityId");
+
+CREATE TABLE "BoardConsentInstrument" (
+  "id" TEXT PRIMARY KEY,
+  "boardConsentId" TEXT NOT NULL REFERENCES "BoardConsent"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "instrumentId" TEXT NOT NULL REFERENCES "Instrument"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE ("boardConsentId", "instrumentId")
+);
+CREATE INDEX "BoardConsentInstrument_instrumentId_idx" ON "BoardConsentInstrument"("instrumentId");
 
 COMMIT;

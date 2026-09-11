@@ -1,5 +1,6 @@
 import SettlementCalculator from "@/app/components/SettlementCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * Stock option exercise / RSU settlement calculator (v0.20.0) — same thin
@@ -16,12 +17,12 @@ import Link from "next/link";
  */
 export default function SettlementPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Stock option exercise / RSU settlement calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Computes the journal entry for a cash option exercise, a net (cashless) share settlement — for either a stock
         option or an RSU, including tax withholding — or the remittance of a previously-withheld tax amount. A
         standalone calculator: enter the transaction's numbers by hand below. Not yet wired to any stored instrument's

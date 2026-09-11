@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { theme } from "@/lib/theme";
 import { db } from "@/lib/db";
 import { computeVisibleSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { buildCapTableRollup, aggregateByStakeholder, CapTableInstrumentInput } from "@/lib/accounting/capTable";
-import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
 import { StakeholderRowActions } from "@/app/components/StakeholderRowActions";
+import { CloseAllInstrumentsButton } from "@/app/components/CloseAllInstrumentsButton";
 
 /**
  * Cap table view — now an actual rollup (original requirement #1), not just a listing.
@@ -31,10 +34,15 @@ import { StakeholderRowActions } from "@/app/components/StakeholderRowActions";
 export default async function CapTablePage({ searchParams }: { searchParams: { entityId?: string } }) {
   const entityId = searchParams.entityId;
   if (!entityId) {
+    // v0.21.0 — fall back to the user's default entity before showing the "pass
+    // ?entityId=..." message, same reasoning as instruments/new/page.tsx.
+    const user = await requireCurrentUser();
+    if (user.defaultEntityId) redirect(`/captable?entityId=${user.defaultEntityId}`);
     return (
-      <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+      <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
-          Pass <code>?entityId=...</code> to view a cap table, or go to <Link href="/">the entity list</Link>.
+          Pass <code>?entityId=...</code> to view a cap table, or go to <Link href="/">the entity list</Link>
+          (or set a default entity there).
         </p>
       </main>
     );
@@ -109,7 +117,7 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
   const ownershipByStakeholder = aggregateByStakeholder(rollup);
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
         <Link href={`/reports?entityId=${entityId}`}>Journal entries report</Link> {" · "}
@@ -117,7 +125,7 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
         <Link href="/reports/exit-waterfall">Exit waterfall calculator</Link>
       </p>
       <h1>Cap Table</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Fully diluted: every option/warrant/as-converted note counts as a share regardless of vesting or
         exercise price. Computed live as of today — see the README's "Live preview vs. closed/reported
         numbers" note.
@@ -129,6 +137,13 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
         <Link href={`/instruments/new?entityId=${entityId}`} style={buttonLinkStyle}>
           + Add an instrument
         </Link>
+      </p>
+
+      <CloseAllInstrumentsButton entityId={entityId} />
+      <p style={{ color: theme.inkMuted, fontSize: "0.85rem", marginTop: "-0.5rem" }}>
+        Runs the accounting engine for every instrument above and stores the resulting schedule/journal
+        entries — this is what GAAP reports (and the debt-modification report) actually read from. Closing an
+        individual instrument from its own page still works too; this just does all of them at once.
       </p>
 
       <h2>Ownership (fully diluted)</h2>
@@ -147,7 +162,9 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
             <tbody>
               {ownershipByStakeholder.map((o) => (
                 <tr key={o.stakeholderId}>
-                  <td style={cellStyle}>{o.stakeholderName}</td>
+                  <td style={cellStyle}>
+                    <Link href={`/stakeholders/${o.stakeholderId}`}>{o.stakeholderName}</Link>
+                  </td>
                   <td style={cellStyle}>{o.shares.toString()}</td>
                   <td style={cellStyle}>{o.ownershipPercent?.toFixed(2)}%</td>
                 </tr>
@@ -177,7 +194,7 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
             {rollup.debtRows.map((r) => (
               <tr key={r.instrumentId}>
                 <td style={cellStyle}>
-                  <Link href={`/instruments/${r.instrumentId}`}>{r.stakeholderName}</Link>
+                  <Link href={`/stakeholders/${r.stakeholderId}`}>{r.stakeholderName}</Link>
                 </td>
                 <td style={cellStyle}>{r.type}</td>
                 <td style={cellStyle}>{r.outstandingBalance?.toString() ?? "—"}</td>
@@ -189,15 +206,15 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
 
       {(rollup.unsupported.length > 0 || computeWarnings.length > 0) && (
         <>
-          <h2 style={{ color: "#92400e" }}>Not included above</h2>
+          <h2 style={{ color: theme.warning.fg }}>Not included above</h2>
           <ul>
             {rollup.unsupported.map((u) => (
-              <li key={u.instrumentId} style={{ color: "#92400e" }}>
+              <li key={u.instrumentId} style={{ color: theme.warning.fg }}>
                 <Link href={`/instruments/${u.instrumentId}`}>{u.stakeholderName}</Link> ({u.type}): {u.reason}
               </li>
             ))}
             {computeWarnings.map((w) => (
-              <li key={w.instrumentId} style={{ color: "#92400e" }}>
+              <li key={w.instrumentId} style={{ color: theme.warning.fg }}>
                 <Link href={`/instruments/${w.instrumentId}`}>{w.stakeholderName}</Link> ({w.type}): {w.message}
               </li>
             ))}
@@ -219,7 +236,9 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
         <tbody>
           {stakeholders.map((s) => (
             <tr key={s.id}>
-              <td style={cellStyle}>{s.name}</td>
+              <td style={cellStyle}>
+                <Link href={`/stakeholders/${s.id}`}>{s.name}</Link>
+              </td>
               <td style={cellStyle}>{s.type}</td>
               <td style={cellStyle}>{s.email ?? "—"}</td>
               <td style={cellStyle}>
@@ -250,13 +269,13 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.5rem", textAlign: "left" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
 const buttonLinkStyle: React.CSSProperties = {
   display: "inline-block",
   padding: "0.4rem 0.8rem",
-  border: "1px solid #333",
+  border: `1px solid ${theme.ink}`,
   borderRadius: 4,
-  background: "#f5f5f5",
+  background: theme.surfaceAlt,
   textDecoration: "none",
   color: "inherit",
   marginRight: "0.5rem",

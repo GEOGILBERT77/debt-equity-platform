@@ -1,5 +1,7 @@
 "use client";
 
+import { theme } from "@/lib/theme";
+
 /**
  * Small, dumb, controlled input primitives shared by every per-instrument-type terms
  * form in `TypeForms.tsx` — replacing the single JSON textarea `NewInstrumentForm.tsx`
@@ -40,6 +42,37 @@ export function TextField({
   );
 }
 
+/** v0.36.0 — a multi-line sibling of `TextField`, added when the first genuinely
+ * free-text narrative fields showed up (a QSBS attestation letter's active-business
+ * description, a board consent's description) — every prior field in this app was
+ * short enough for a single-line input. */
+export function TextAreaField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 4,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <label style={labelStyle}>
+      {label}
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        style={{ ...inputStyle, fontFamily: theme.font.body, resize: "vertical" }}
+      />
+    </label>
+  );
+}
+
 /** See the module doc comment above for why this is a text input, not `type="number"`. */
 export function DecimalField({
   label,
@@ -70,11 +103,22 @@ export function DecimalField({
   );
 }
 
-export function DateField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+export function DateField({
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  hint?: string;
+}) {
   return (
     <label style={labelStyle}>
       {label}
       <input type="date" value={value} onChange={(e) => onChange(e.target.value)} style={inputStyle} />
+      {hint && <span style={hintStyle}>{hint}</span>}
     </label>
   );
 }
@@ -125,23 +169,57 @@ export function FieldGroup({ title, children, note }: { title: string; children:
   );
 }
 
-export const labelStyle: React.CSSProperties = { display: "block", margin: "0.6rem 0", fontSize: "0.9rem" };
-export const inputStyle: React.CSSProperties = { display: "block", width: "100%", padding: "0.4rem", marginTop: "0.25rem" };
-export const hintStyle: React.CSSProperties = { display: "block", color: "#666", fontSize: "0.78rem", marginTop: "0.2rem" };
+// v0.34.0 — these were plain hardcoded greys/blacks before (see theme.ts's doc
+// comment for why that changed); now every value comes from the shared "Slate"
+// palette so a form field, a button, and a fieldset border all read as one system.
+export const labelStyle: React.CSSProperties = {
+  display: "block",
+  margin: "0.6rem 0",
+  fontSize: "0.9rem",
+  color: theme.ink,
+  fontWeight: 500,
+};
+export const inputStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  padding: "0.5rem 0.6rem",
+  marginTop: "0.3rem",
+  fontSize: "0.92rem",
+  color: theme.ink,
+  background: theme.surface,
+  border: `1px solid ${theme.border}`,
+  borderRadius: 6,
+};
+export const hintStyle: React.CSSProperties = { display: "block", color: theme.inkMuted, fontSize: "0.78rem", marginTop: "0.25rem" };
 export const fieldsetStyle: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 4,
+  border: `1px solid ${theme.border}`,
+  borderRadius: 6,
   padding: "0.75rem 1rem 1rem",
   margin: "1rem 0",
+  background: theme.surfaceAlt,
 };
-export const legendStyle: React.CSSProperties = { padding: "0 0.4rem", fontWeight: 600, fontSize: "0.85rem" };
-export const noteStyle: React.CSSProperties = { color: "#92400e", fontSize: "0.8rem", marginTop: "0.5rem" };
+export const legendStyle: React.CSSProperties = { padding: "0 0.4rem", fontWeight: 600, fontSize: "0.85rem", color: theme.ink };
+export const noteStyle: React.CSSProperties = { color: theme.warning.fg, fontSize: "0.8rem", marginTop: "0.5rem" };
 export const smallButtonStyle: React.CSSProperties = {
-  padding: "0.25rem 0.6rem",
-  border: "1px solid #999",
-  borderRadius: 4,
-  background: "#fff",
+  padding: "0.35rem 0.75rem",
+  border: `1px solid ${theme.border}`,
+  borderRadius: 6,
+  background: theme.surface,
+  color: theme.ink,
   cursor: "pointer",
-  fontSize: "0.8rem",
+  fontSize: "0.82rem",
+  fontWeight: 600,
 };
-export const removeButtonStyle: React.CSSProperties = { ...smallButtonStyle, color: "#a33", borderColor: "#a33" };
+export const removeButtonStyle: React.CSSProperties = { ...smallButtonStyle, color: theme.danger.fg, borderColor: theme.danger.fg };
+/** A filled, primary-colored button — the "this is the main action on this form"
+ * counterpart to `smallButtonStyle`'s neutral outline button. */
+export const primaryButtonStyle: React.CSSProperties = {
+  padding: "0.5rem 1rem",
+  border: "none",
+  borderRadius: 6,
+  background: theme.primary,
+  color: theme.onPrimary,
+  cursor: "pointer",
+  fontSize: "0.88rem",
+  fontWeight: 600,
+};

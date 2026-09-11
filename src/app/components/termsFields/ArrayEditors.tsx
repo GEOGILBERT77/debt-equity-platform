@@ -1,6 +1,7 @@
 "use client";
 
 import { DateField, DecimalField, TextField, removeButtonStyle, smallButtonStyle } from "./FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 /**
  * Row-editable list controls for the four array shapes that recur across almost every
@@ -48,7 +49,7 @@ export function TrancheArrayField({
     <div style={{ margin: "0.6rem 0" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <strong style={{ fontSize: "0.9rem" }}>{label}</strong>
-        <span style={{ fontSize: "0.78rem", color: "#666" }}>Tranche quantities must sum to the grant's total quantity above.</span>
+        <span style={{ fontSize: "0.78rem", color: theme.inkMuted }}>Tranche quantities must sum to the grant's total quantity above.</span>
       </div>
       {value.map((row, i) => (
         <div key={i} style={rowStyle}>
@@ -73,7 +74,7 @@ export function TrancheArrayField({
       >
         + Add tranche
       </button>
-      <span style={{ marginLeft: "0.75rem", fontSize: "0.78rem", color: "#666" }}>Tranche total: {total.toLocaleString()}</span>
+      <span style={{ marginLeft: "0.75rem", fontSize: "0.78rem", color: theme.inkMuted }}>Tranche total: {total.toLocaleString()}</span>
     </div>
   );
 }
@@ -97,7 +98,7 @@ export function CashFlowArrayField({
   return (
     <div style={{ margin: "0.6rem 0" }}>
       <strong style={{ fontSize: "0.9rem" }}>{label}</strong>
-      {hint && <span style={{ display: "block", fontSize: "0.78rem", color: "#666" }}>{hint}</span>}
+      {hint && <span style={{ display: "block", fontSize: "0.78rem", color: theme.inkMuted }}>{hint}</span>}
       {value.map((row, i) => (
         <div key={i} style={rowStyle}>
           <div style={{ flex: "0 0 160px" }}>
@@ -143,7 +144,7 @@ export function ObservationArrayField({
   return (
     <div style={{ margin: "0.6rem 0" }}>
       <strong style={{ fontSize: "0.9rem" }}>{label}</strong>
-      {hint && <span style={{ display: "block", fontSize: "0.78rem", color: "#666" }}>{hint}</span>}
+      {hint && <span style={{ display: "block", fontSize: "0.78rem", color: theme.inkMuted }}>{hint}</span>}
       {value.map((row, i) => (
         <div key={i} style={rowStyle}>
           <div style={{ flex: "0 0 160px" }}>
@@ -181,7 +182,7 @@ export function DeferredFeeArrayField({
   return (
     <div style={{ margin: "0.6rem 0" }}>
       <strong style={{ fontSize: "0.9rem" }}>Deferred financing fees</strong>
-      <span style={{ display: "block", fontSize: "0.78rem", color: "#666" }}>
+      <span style={{ display: "block", fontSize: "0.78rem", color: theme.inkMuted }}>
         The original closing fee, plus any later upsize/amendment fees — each amortizes only over what was actually remaining when it was incurred.
       </span>
       {value.map((row, i) => (
@@ -236,5 +237,5 @@ const rowStyle: React.CSSProperties = {
   gap: "0.5rem",
   alignItems: "flex-start",
   padding: "0.4rem 0",
-  borderBottom: "1px dashed #eee",
+  borderBottom: `1px dashed ${theme.border}`,
 };

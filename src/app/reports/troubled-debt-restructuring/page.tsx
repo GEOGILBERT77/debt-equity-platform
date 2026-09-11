@@ -1,5 +1,6 @@
 import TdrCalculator from "@/app/components/TdrCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * ASC 470-60 troubled debt restructuring calculator (v0.20.0) — same thin
@@ -19,12 +20,12 @@ import Link from "next/link";
  */
 export default function TroubledDebtRestructuringPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Troubled debt restructuring calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Runs the ASC 470-60-35-5 undiscounted total-future-cash-payments test for a debt restructuring granted as a
         concession to a debtor in financial difficulty, then produces the resulting accounting — an immediate gain
         with zero further interest expense if total future payments fall below carrying value, a new effective rate

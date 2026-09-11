@@ -63,7 +63,14 @@ function parseToRaw(v: number | string): bigint {
 export class FixedDecimal {
   private readonly raw: bigint;
 
-  /** Mirrors decimal.js's `new Decimal(value)` usage throughout this codebase. */
+  /** Mirrors decimal.js's `new Decimal(value)` usage throughout this codebase. The
+   * `v instanceof FixedDecimal` fast path is handled here, inside the class body,
+   * rather than inside the free-standing `parseToRaw` function above: `raw` is a
+   * private field, and TypeScript only allows one instance's private members to be
+   * read from another instance of the *same class* — a plain module-level function
+   * doesn't qualify, even in this same file. (Caught by a real `tsc`/`next build` run,
+   * which the sandbox this was originally written in couldn't do — see the module doc
+   * comment.) */
   constructor(v: DecimalValue) {
     this.raw = v instanceof FixedDecimal ? v.raw : parseToRaw(v);
   }

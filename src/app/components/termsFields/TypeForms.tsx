@@ -1,6 +1,7 @@
 "use client";
 
 import { BoolField, DateField, DecimalField, FieldGroup, SelectField, TextField, hintStyle } from "./FieldPrimitives";
+import { theme } from "@/lib/theme";
 import {
   CashFlowArrayField,
   CashFlowRow,
@@ -38,6 +39,11 @@ export interface ServiceConditionGrantState {
   grantDateFairValuePerUnit: string;
   attributionMethod: "straight-line" | "graded";
   tranches: TrancheRow[];
+  /** Blank = "same as the last vesting tranche" (the ordinary case). Set this only
+   * when the requisite SERVICE period is a fact independent of the vesting schedule —
+   * see ServiceConditionGrant.servicePeriodEndDate's doc comment in vesting.ts. Only
+   * consulted for straight-line attribution. */
+  servicePeriodEndDate: string;
 }
 
 export function defaultServiceConditionGrantState(): ServiceConditionGrantState {
@@ -52,6 +58,7 @@ export function defaultServiceConditionGrantState(): ServiceConditionGrantState 
       { id: "t3", vestDate: "2029-01-01", quantity: "2500" },
       { id: "t4", vestDate: "2030-01-01", quantity: "2500" },
     ],
+    servicePeriodEndDate: "",
   };
 }
 
@@ -62,6 +69,7 @@ export function toServiceConditionGrantTerms(s: ServiceConditionGrantState) {
     grantDateFairValuePerUnit: s.grantDateFairValuePerUnit,
     attributionMethod: s.attributionMethod,
     tranches: s.tranches.map((t) => ({ id: t.id, vestDate: t.vestDate, quantity: t.quantity })),
+    ...(s.servicePeriodEndDate ? { servicePeriodEndDate: s.servicePeriodEndDate } : {}),
   };
 }
 
@@ -86,6 +94,245 @@ export function ServiceConditionGrantForm({
         onChange={(v) => onChange({ ...value, attributionMethod: v })}
       />
       <TrancheArrayField label="Vesting tranches" value={value.tranches} onChange={(t) => onChange({ ...value, tranches: t })} />
+      <DateField
+        label="Service period ends (optional)"
+        value={value.servicePeriodEndDate}
+        onChange={(v) => onChange({ ...value, servicePeriodEndDate: v })}
+      />
+      <p style={hintStyle}>
+        Leave blank if the expense should be recognized straight-line through the LAST vesting tranche above (the
+        ordinary case). Set this only if the requisite service period is longer than the vesting schedule implies —
+        e.g. shares vest over 4 years but the award requires 6 years of service to be fully earned. Only affects the
+        straight-line attribution method; graded ties each tranche's recognition to its own vest date regardless.
+      </p>
+    </>
+  );
+}
+
+// ---- STOCK_OPTION only: ServiceConditionGrant + a required strike price -------------
+// Split out from ServiceConditionGrantForm (rather than adding strikePrice to it
+// directly) because RSU/RESTRICTED_STOCK/SAR's stock-settled equityTerms all share
+// that same base shape and none of them have a strike price — same "wrap the shared
+// form, add the one extra type-specific field" pattern RestrictedStockForm already
+// uses below for purchasePricePerShare.
+
+export interface StockOptionGrantState extends ServiceConditionGrantState {
+  strikePrice: string;
+}
+
+export function defaultStockOptionGrantState(): StockOptionGrantState {
+  return { ...defaultServiceConditionGrantState(), strikePrice: "9.45" };
+}
+
+export function toStockOptionGrantTerms(s: StockOptionGrantState) {
+  return { ...toServiceConditionGrantTerms(s), strikePrice: s.strikePrice };
+}
+
+export function StockOptionGrantForm({
+  value,
+  onChange,
+}: {
+  value: StockOptionGrantState;
+  onChange: (v: StockOptionGrantState) => void;
+}) {
+  return (
+    <>
+      <ServiceConditionGrantForm value={value} onChange={(v) => onChange({ ...value, ...v })} />
+      <DecimalField
+        label="Strike price"
+        value={value.strikePrice}
+        onChange={(v) => onChange({ ...value, strikePrice: v })}
+        hint="Disclosure only — not used by the expense schedule, which depends only on grant-date fair value. Maintained here so it shows up on the Grants report."
+      />
+    </>
+  );
+}
+
+// ---- STOCK_OPTION only: market condition (ASC 718-10-25, no reversal) --------------
+// Simpler than the service-condition shape above: no tranches, no attribution method
+// choice — a market-condition award's fair value already prices in the probability of
+// achieving the hurdle (via the Monte Carlo/lattice model used to value it), so it's
+// always a single straight-line allocation to the model's own derived service period.
+// See StockOptionMarketConditionTerms's doc comment in dispatch.ts.
+
+export interface MarketConditionGrantState {
+  grantDate: string;
+  quantity: string;
+  grantDateFairValuePerUnit: string;
+  strikePrice: string;
+  derivedServiceEndDate: string;
+}
+
+export function defaultMarketConditionGrantState(): MarketConditionGrantState {
+  return {
+    grantDate: "2026-01-01",
+    quantity: "10000",
+    grantDateFairValuePerUnit: "3.50",
+    strikePrice: "9.45",
+    derivedServiceEndDate: "2032-01-01",
+  };
+}
+
+export function toMarketConditionGrantTerms(s: MarketConditionGrantState) {
+  return {
+    conditionType: "market" as const,
+    grantDate: s.grantDate,
+    quantity: s.quantity,
+    grantDateFairValuePerUnit: s.grantDateFairValuePerUnit,
+    strikePrice: s.strikePrice,
+    derivedServiceEndDate: s.derivedServiceEndDate,
+  };
+}
+
+export function MarketConditionGrantForm({
+  value,
+  onChange,
+}: {
+  value: MarketConditionGrantState;
+  onChange: (v: MarketConditionGrantState) => void;
+}) {
+  return (
+    <>
+      <p style={hintStyle}>
+        Market condition: fair value (from an outside Monte Carlo / lattice valuation) already prices in the
+        probability of achieving the hurdle, so expense is always straight-line over the valuation model&apos;s own
+        derived service period, with no reversal even if the hurdle is ultimately missed.
+      </p>
+      <DateField label="Grant date" value={value.grantDate} onChange={(v) => onChange({ ...value, grantDate: v })} />
+      <DecimalField label="Total quantity" value={value.quantity} onChange={(v) => onChange({ ...value, quantity: v })} />
+      <DecimalField
+        label="Grant-date fair value per unit"
+        value={value.grantDateFairValuePerUnit}
+        onChange={(v) => onChange({ ...value, grantDateFairValuePerUnit: v })}
+        hint="From the outside valuation model — this platform doesn't compute a market-condition fair value itself."
+      />
+      <DecimalField
+        label="Strike price"
+        value={value.strikePrice}
+        onChange={(v) => onChange({ ...value, strikePrice: v })}
+        hint="Disclosure only — not used by the expense schedule."
+      />
+      <DateField
+        label="Derived service period end date"
+        value={value.derivedServiceEndDate}
+        onChange={(v) => onChange({ ...value, derivedServiceEndDate: v })}
+        hint="From the same valuation model — not necessarily the award's stated contractual term."
+      />
+    </>
+  );
+}
+
+// ---- STOCK_OPTION only: performance condition (ASC 718-10-25, cumulative catch-up) -
+// The one genuinely stateful engine of the three — see vesting.ts's module doc
+// comment. `probabilityAssessments` needs one entry per MONTH of the requisite
+// service period; this form auto-fills all of them as "probable" (the ordinary case
+// for an award granted on the expectation performance will be met — produces a plain
+// straight-line schedule, same shape as the other two condition types) whenever the
+// service period is set/changed. There's no per-month editing UI yet — reaching a
+// not-fully-probable scenario today means switching to "Edit as raw JSON instead" and
+// editing individual { date, probable } entries by hand, or using "Modify terms" once
+// the assessment actually needs to change (a real accounting event, not a data-entry
+// nicety) — see dispatch.ts's doc comment on why this is scoped the way it is.
+
+export interface PerformanceConditionGrantState {
+  grantDate: string;
+  quantity: string;
+  grantDateFairValuePerUnit: string;
+  strikePrice: string;
+  requisiteServiceEndDate: string;
+  /** One entry per month from grantDate to requisiteServiceEndDate — see this form's
+   * module comment for why this is auto-generated (all "probable") rather than
+   * hand-edited row by row. */
+  probabilityAssessments: { date: string; probable: boolean }[];
+}
+
+export function defaultPerformanceConditionGrantState(): PerformanceConditionGrantState {
+  return {
+    grantDate: "2026-01-01",
+    quantity: "10000",
+    grantDateFairValuePerUnit: "3.50",
+    strikePrice: "9.45",
+    requisiteServiceEndDate: "2032-01-01",
+    probabilityAssessments: [],
+  };
+}
+
+export function toPerformanceConditionGrantTerms(s: PerformanceConditionGrantState) {
+  return {
+    conditionType: "performance" as const,
+    grantDate: s.grantDate,
+    quantity: s.quantity,
+    grantDateFairValuePerUnit: s.grantDateFairValuePerUnit,
+    strikePrice: s.strikePrice,
+    requisiteServiceEndDate: s.requisiteServiceEndDate,
+    probabilityAssessments: s.probabilityAssessments,
+  };
+}
+
+/** Generates one "probable: true" entry per calendar month from `grantDate`
+ * (exclusive) through `requisiteServiceEndDate` (inclusive) — mirrors
+ * `buildMonthlyPeriods` (dateMath.ts) closely enough for the common case without
+ * importing the engine's own period-splitting function into a form component; the
+ * server-side computation is still the authority on exact period boundaries. */
+function generateMonthlyProbableAssessments(grantDate: string, endDate: string): { date: string; probable: boolean }[] {
+  const assessments: { date: string; probable: boolean }[] = [];
+  const start = new Date(`${grantDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return assessments;
+  let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate()));
+  while (cursor < end) {
+    assessments.push({ date: cursor.toISOString().slice(0, 10), probable: true });
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate()));
+  }
+  assessments.push({ date: endDate, probable: true });
+  return assessments;
+}
+
+export function PerformanceConditionGrantForm({
+  value,
+  onChange,
+}: {
+  value: PerformanceConditionGrantState;
+  onChange: (v: PerformanceConditionGrantState) => void;
+}) {
+  const probableCount = value.probabilityAssessments.filter((a) => a.probable).length;
+  return (
+    <>
+      <p style={hintStyle}>
+        Performance condition: recognized only once achievement is probable, with a cumulative catch-up if that
+        assessment changes and a full reversal if it becomes improbable. The probability assessment is an ongoing
+        judgment, not a one-time input — see the &quot;Probability assessments&quot; note below.
+      </p>
+      <DateField label="Grant date" value={value.grantDate} onChange={(v) => onChange({ ...value, grantDate: v })} />
+      <DecimalField label="Total quantity" value={value.quantity} onChange={(v) => onChange({ ...value, quantity: v })} />
+      <DecimalField
+        label="Grant-date fair value per unit"
+        value={value.grantDateFairValuePerUnit}
+        onChange={(v) => onChange({ ...value, grantDateFairValuePerUnit: v })}
+      />
+      <DecimalField
+        label="Strike price"
+        value={value.strikePrice}
+        onChange={(v) => onChange({ ...value, strikePrice: v })}
+        hint="Disclosure only — not used by the expense schedule."
+      />
+      <DateField
+        label="Requisite service period end date"
+        value={value.requisiteServiceEndDate}
+        onChange={(v) =>
+          onChange({
+            ...value,
+            requisiteServiceEndDate: v,
+            probabilityAssessments: generateMonthlyProbableAssessments(value.grantDate, v),
+          })
+        }
+      />
+      <p style={hintStyle}>
+        Probability assessments: {value.probabilityAssessments.length} month(s) populated, {probableCount} marked
+        probable. Set above to auto-fill every month as probable (the ordinary case — produces a plain straight-line
+        schedule). To record a change in assessment later, use &quot;Modify terms&quot; on the instrument&apos;s own
+        page, or &quot;Edit as raw JSON instead&quot; below for a scenario needing per-month control now.
+      </p>
     </>
   );
 }
@@ -215,7 +462,7 @@ export function RevolverForm({ value, onChange }: { value: RevolverState; onChan
       )}
       <DeferredFeeArrayField value={value.deferredFees} onChange={(f) => onChange({ ...value, deferredFees: f })} />
       {!value.hasCommitmentFee && value.deferredFees.length === 0 && (
-        <p style={{ color: "crimson", fontSize: "0.8rem" }}>A revolver needs at least a commitment fee or a deferred fee.</p>
+        <p style={{ color: theme.danger.fg, fontSize: "0.8rem" }}>A revolver needs at least a commitment fee or a deferred fee.</p>
       )}
     </>
   );
@@ -287,7 +534,7 @@ export function WarrantForm({ value, onChange }: { value: WarrantState; onChange
           onChange={(v) => onChange({ ...value, hasDownRoundProtection: v })}
         />
         {value.hasDownRoundProtection && (
-          <p style={{ color: "crimson", fontSize: "0.8rem" }}>
+          <p style={{ color: theme.danger.fg, fontSize: "0.8rem" }}>
             Down-round protection means classification needs a human judgment call (ASU 2017-11 may still permit
             equity) — the schedule can't be computed until that's resolved outside this form.
           </p>
@@ -469,6 +716,7 @@ export function defaultSarState(): SarState {
         { id: "t3", vestDate: "2029-01-01", quantity: "1000" },
         { id: "t4", vestDate: "2030-01-01", quantity: "1000" },
       ],
+      servicePeriodEndDate: "",
     },
     cashGrantDate: "2026-01-01",
     cashQuantity: "1000",
@@ -542,6 +790,7 @@ export function defaultRestrictedStockState(): RestrictedStockState {
       { id: "t3", vestDate: "2029-01-01", quantity: "2000" },
       { id: "t4", vestDate: "2030-01-01", quantity: "2000" },
     ],
+    servicePeriodEndDate: "",
   };
 }
 export function toRestrictedStockTerms(s: RestrictedStockState) {

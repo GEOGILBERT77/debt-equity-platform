@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * Placeholder for the "Communications" nav item (see NavBar.tsx) — the requested
@@ -24,17 +25,17 @@ export default function CommunicationsPage({
   searchParams: { entityId?: string };
 }) {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 700 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 700 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Communications</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Not built yet. This is meant to become a place to email investors and other stakeholders directly
         from the app — a grant confirmation, a capital call notice, a periodic update — rather than
         composing those by hand outside the system.
       </p>
-      <p style={{ color: "#888", fontSize: "0.9rem" }}>
+      <p style={{ color: theme.inkMuted, fontSize: "0.9rem" }}>
         Sending real email needs a vendor decision first (SendGrid, Postmark, Resend, etc.), plus a place to
         store that vendor's credentials and a real compose/send flow — see INTEGRATIONS.md for the
         architectural groundwork this and every other vendor connection needs.

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { validateInstrumentTerms, TermsValidationError } from "@/lib/accounting/termsValidation";
 import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
+import { approveAmortizationScheduleIfApplicable } from "@/lib/db/amortizationSchedule";
 
 /**
  * POST /api/instruments/:id/modifications
@@ -21,6 +22,19 @@ import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
  * against terms. Requires at least EDITOR on the instrument's entity — the instrument
  * has to be looked up first regardless (to read its type/entityId), so the access
  * check and the "does this even exist" 404 share one query below.
+ *
+ * INTENDED to be called after POST /api/instruments/:id/modifications/preview with
+ * the same `effectiveDate`/`terms` — see that route and previewModificationImpact's
+ * doc comment. Not enforced (same non-enforced-but-intended relationship as
+ * corrections/preview → corrections/commit), but the UI's Modify flow always calls
+ * preview first and only enables this call once a preview has been shown. Committing
+ * IS this modification's one required approval: right after creating the new term
+ * version, this also generates and persists the resulting AmortizationScheduleApproval
+ * (for types that have one) in the same request — a person who has just reviewed the
+ * impact and chosen to commit it shouldn't need a THIRD click to separately "approve"
+ * what they just approved by committing. See amortizationSchedule.ts's top-of-file
+ * doc comment for why this differs from initial grant creation, which still requires
+ * its own separate approval step.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json().catch(() => ({}));
@@ -73,10 +87,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     },
   });
 
+  // See this route's doc comment above: committing (this call) is the one approval
+  // this modification gets, since it's only reachable after the preview route has
+  // already shown its impact. Recomputes from THIS new version (now the latest), so
+  // any prior approval is superseded by a fresh one covering the amended terms.
+  const amortizationSchedule = await approveAmortizationScheduleIfApplicable(params.id, access.user.id);
+
   // Recomputing and persisting the resulting ScheduleEntry/JournalEntry rows from here
   // (via recomputeSchedule in modificationEngine.ts) is the natural next step, deliberately
   // left as a follow-up: it needs a per-InstrumentType dispatch to the right engine
   // function (vesting vs. debt vs. warrant), which belongs in its own service module
   // rather than inline in a route handler.
-  return NextResponse.json({ version }, { status: 201 });
+  return NextResponse.json({ version, amortizationSchedule }, { status: 201 });
 }

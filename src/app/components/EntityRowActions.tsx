@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { theme } from "@/lib/theme";
 
 /**
  * Inline rename/change-currency and delete controls for one row of the home page's
@@ -89,10 +90,10 @@ export function EntityRowActions({
         <button type="button" onClick={() => setEditing(true)} style={linkButtonStyle}>
           Edit
         </button>{" "}
-        <button type="button" onClick={handleDelete} disabled={status === "deleting"} style={{ ...linkButtonStyle, color: "#a33" }}>
+        <button type="button" onClick={handleDelete} disabled={status === "deleting"} style={{ ...linkButtonStyle, color: theme.danger.fg }}>
           {status === "deleting" ? "Deleting…" : "Delete"}
         </button>
-        {message && <div style={{ color: "crimson", fontSize: "0.78rem" }}>{message}</div>}
+        {message && <div style={{ color: theme.danger.fg, fontSize: "0.78rem" }}>{message}</div>}
       </span>
     );
   }
@@ -121,7 +122,7 @@ export function EntityRowActions({
       >
         Cancel
       </button>
-      {message && <span style={{ color: "crimson", fontSize: "0.78rem" }}>{message}</span>}
+      {message && <span style={{ color: theme.danger.fg, fontSize: "0.78rem" }}>{message}</span>}
     </span>
   );
 }
@@ -129,7 +130,7 @@ export function EntityRowActions({
 const linkButtonStyle: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#2563eb",
+  color: theme.accent,
   cursor: "pointer",
   padding: 0,
   fontSize: "0.85rem",
@@ -138,9 +139,9 @@ const linkButtonStyle: React.CSSProperties = {
 const smallInputStyle: React.CSSProperties = { padding: "0.25rem", fontSize: "0.85rem", width: "8rem" };
 const smallButtonStyle: React.CSSProperties = {
   padding: "0.2rem 0.5rem",
-  border: "1px solid #999",
+  border: `1px solid ${theme.border}`,
   borderRadius: 4,
-  background: "#fff",
+  background: theme.surface,
   cursor: "pointer",
   fontSize: "0.8rem",
 };

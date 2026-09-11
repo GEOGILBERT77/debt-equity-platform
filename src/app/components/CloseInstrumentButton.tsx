@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { theme } from "@/lib/theme";
 
 /**
  * Client component wrapping POST /api/instruments/:id/close. A plain button + fetch
@@ -49,7 +50,7 @@ export function CloseInstrumentButton({ instrumentId }: { instrumentId: string }
         {status === "loading" ? "Closing…" : "Close through today"}
       </button>
       {message && (
-        <p style={{ color: status === "error" ? "crimson" : "#166534", marginTop: "0.5rem" }}>{message}</p>
+        <p style={{ color: status === "error" ? theme.danger.fg : theme.success.fg, marginTop: "0.5rem" }}>{message}</p>
       )}
     </div>
   );
@@ -57,8 +58,8 @@ export function CloseInstrumentButton({ instrumentId }: { instrumentId: string }
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
-  border: "1px solid #333",
+  border: `1px solid ${theme.border}`,
   borderRadius: 4,
-  background: "#f5f5f5",
+  background: theme.surfaceAlt,
   cursor: "pointer",
 };

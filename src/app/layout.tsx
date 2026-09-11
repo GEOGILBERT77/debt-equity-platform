@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getCurrentUserFromToken } from "@/lib/auth/authGuard";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { NavBar } from "@/app/components/NavBar";
+import "./globals.css";
 
 export const metadata = {
   title: "Debt & Equity Platform",
@@ -32,10 +33,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>
+      <head>
+        {/* v0.34.0 — the "Slate" palette's two web fonts (see src/lib/theme.ts's
+            `font` tokens): Public Sans for body/UI text, Fraunces for headings, IBM
+            Plex Mono wherever digits line up in a column. Loaded once here rather
+            than per-page since every page under this layout can use them. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body>
         {currentUser && (
           <Suspense fallback={null}>
-            <NavBar userEmail={currentUser.email} />
+            <NavBar userEmail={currentUser.email} defaultEntityId={currentUser.defaultEntityId} />
           </Suspense>
         )}
         {children}

@@ -1,0 +1,12 @@
+-- Run this ONCE, by itself, against your already-live Supabase database (SQL Editor:
+-- your Supabase project -> SQL Editor -> paste -> Run). It adds the one new column the
+-- v0.21.0 "default entity" feature needs to the "User" table you already have.
+--
+-- This is the exact same statement that's now folded into db/schema.sql for anyone
+-- setting up a brand-new database from scratch — see that file's comment right above
+-- the matching line for the full reasoning (why it's ALTER TABLE and not part of the
+-- original CREATE TABLE, and why ON DELETE SET NULL rather than this project's usual
+-- RESTRICT). Safe to run even if you're not sure whether you already ran it — rerunning
+-- will just fail loudly with "column already exists" rather than doing anything
+-- destructive.
+ALTER TABLE "User" ADD COLUMN "defaultEntityId" TEXT REFERENCES "Entity"("id") ON DELETE SET NULL ON UPDATE CASCADE;

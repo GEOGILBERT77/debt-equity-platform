@@ -171,14 +171,29 @@ function checkAfter(c: IssueCollector, field: string, date: ISODate, afterDate: 
 // say, one shared "reasonable-looking terms object" check) is what makes a validation
 // failure here a reliable predictor of an engine failure, not an approximation of one.
 
-/** vesting.ts's ServiceConditionGrant — used by STOCK_OPTION and RSU. */
-function validateServiceConditionGrant(terms: Record<string, unknown>, c: IssueCollector): void {
+/** vesting.ts's ServiceConditionGrant — used by STOCK_OPTION and RSU (and, via the
+ * validators further down, RESTRICTED_STOCK and a stock-settled SAR's equityTerms).
+ *
+ * `requireStrikePrice` is only ever passed for STOCK_OPTION — see this function's
+ * `strikePrice` check below and ServiceConditionGrant.strikePrice's doc comment in
+ * vesting.ts for why RSU/RESTRICTED_STOCK/SAR don't get the same requirement. */
+function validateServiceConditionGrant(
+  terms: Record<string, unknown>,
+  c: IssueCollector,
+  opts: { requireStrikePrice?: boolean } = {}
+): void {
   c.requireISODate(terms, "grantDate");
   c.requireDecimal(terms, "quantity");
   c.requireDecimal(terms, "grantDateFairValuePerUnit");
 
   if (terms.attributionMethod !== "straight-line" && terms.attributionMethod !== "graded") {
     c.add("attributionMethod", 'is required and must be "straight-line" or "graded"');
+  }
+
+  if (opts.requireStrikePrice) {
+    c.requireDecimal(terms, "strikePrice");
+  } else {
+    c.optionalDecimal(terms, "strikePrice");
   }
 
   if (!Array.isArray(terms.tranches) || terms.tranches.length === 0) {
@@ -225,6 +240,35 @@ function validateServiceConditionGrant(terms: Record<string, unknown>, c: IssueC
       );
     }
   }
+
+  // servicePeriodEndDate (vesting.ts's ServiceConditionGrant field of the same name) —
+  // optional, but when present it has to be a real date after the grant date, and it
+  // can't end before every tranche has actually vested (a service period shorter than
+  // the vesting schedule isn't a real ASC 718-10-35-8 requisite service period — it's
+  // just the vesting schedule again, so leave the field blank for that case instead).
+  if (terms.servicePeriodEndDate !== undefined && terms.servicePeriodEndDate !== null && terms.servicePeriodEndDate !== "") {
+    if (!isISODate(terms.servicePeriodEndDate)) {
+      c.add("servicePeriodEndDate", "must be a valid ISO date (YYYY-MM-DD) when provided");
+    } else {
+      if (isISODate(terms.grantDate) && terms.servicePeriodEndDate <= terms.grantDate) {
+        c.add("servicePeriodEndDate", "must be after grantDate");
+      }
+      if (allTranchesWellFormed && Array.isArray(terms.tranches) && terms.tranches.length > 0) {
+        const wellFormedTranches = terms.tranches as { vestDate: unknown }[];
+        const vestDates = wellFormedTranches.map((t) => t.vestDate).filter(isISODate);
+        if (vestDates.length === wellFormedTranches.length) {
+          const lastVestDate = vestDates.reduce((max, d) => (d > max ? d : max), vestDates[0]);
+          if (terms.servicePeriodEndDate < lastVestDate) {
+            c.add(
+              "servicePeriodEndDate",
+              `must be on or after the last vesting tranche's date (${lastVestDate}) — the requisite service ` +
+                "period can't end before all shares have vested"
+            );
+          }
+        }
+      }
+    }
+  }
 }
 
 /** debtAmortization.ts's TermDebtInputs — used by TERM_LOAN, and as the base shape for
@@ -253,6 +297,77 @@ function validateTermDebtInputs(terms: Record<string, unknown>, c: IssueCollecto
     if (allWellFormed) {
       checkChronological(c, "cashFlows", (terms.cashFlows as { date: ISODate }[]).map((cf) => cf.date));
     }
+  }
+}
+
+/** dispatch.ts's StockOptionPerformanceConditionTerms — a STOCK_OPTION whose
+ * `conditionType` is "performance". `probabilityAssessments` is checked for shape and
+ * chronology only (the same treatment WARRANT's remeasurement.observations and a
+ * cash-settled SAR's observations get) — it may be empty at grant time (this platform
+ * has no automatic way to project future probability, so an empty array here just
+ * means "no full projected schedule yet," the same `impactApplicable: false` shape
+ * every no-natural-end-date type already produces, not a validation error). */
+function validateStockOptionPerformanceConditionTerms(terms: Record<string, unknown>, c: IssueCollector): void {
+  c.requireISODate(terms, "grantDate");
+  c.requireDecimal(terms, "quantity");
+  c.requireDecimal(terms, "grantDateFairValuePerUnit");
+  c.requireISODate(terms, "requisiteServiceEndDate");
+  c.optionalDecimal(terms, "strikePrice");
+  if (
+    isISODate(terms.grantDate) &&
+    isISODate(terms.requisiteServiceEndDate) &&
+    terms.requisiteServiceEndDate <= terms.grantDate
+  ) {
+    c.add("requisiteServiceEndDate", "must be after grantDate");
+  }
+
+  if (!Array.isArray(terms.probabilityAssessments)) {
+    c.add("probabilityAssessments", "is required and must be an array of { date, probable } (may be empty at grant time)");
+  } else {
+    let allWellFormed = true;
+    terms.probabilityAssessments.forEach((a: unknown, i: number) => {
+      const ac = c.child(`probabilityAssessments[${i}]`);
+      if (!isPlainObject(a)) {
+        ac.add("", "must be an object with date and probable");
+        allWellFormed = false;
+      } else {
+        ac.requireISODate(a, "date");
+        ac.requireBoolean(a, "probable");
+        if (ac.issues.length > 0) allWellFormed = false;
+      }
+      c.merge(ac);
+    });
+    // Same positional-matching hazard as TERM_LOAN's cashFlows, WARRANT's
+    // remeasurement.observations, and a cash-settled SAR's observations —
+    // dispatch.ts's getScheduleBuilder matches probabilityAssessments[i] to
+    // periods[i] by index, not by searching for a matching date.
+    if (allWellFormed && terms.probabilityAssessments.length > 0) {
+      const dates = (terms.probabilityAssessments as { date: ISODate }[]).map((a) => a.date);
+      checkChronological(c, "probabilityAssessments", dates);
+      if (isISODate(terms.grantDate)) {
+        checkAfter(c, "probabilityAssessments[0].date", dates[0], terms.grantDate, "grantDate");
+      }
+    }
+  }
+}
+
+/** dispatch.ts's StockOptionMarketConditionTerms — a STOCK_OPTION whose
+ * `conditionType` is "market". No attributionMethod, no tranches — market condition
+ * fair value already prices in the probability of achieving the hurdle, so it's
+ * always a single straight-line allocation to `derivedServiceEndDate`, never graded,
+ * never reversed (see buildMarketConditionSchedule's doc comment in vesting.ts). */
+function validateStockOptionMarketConditionTerms(terms: Record<string, unknown>, c: IssueCollector): void {
+  c.requireISODate(terms, "grantDate");
+  c.requireDecimal(terms, "quantity");
+  c.requireDecimal(terms, "grantDateFairValuePerUnit");
+  c.requireISODate(terms, "derivedServiceEndDate");
+  c.optionalDecimal(terms, "strikePrice");
+  if (
+    isISODate(terms.grantDate) &&
+    isISODate(terms.derivedServiceEndDate) &&
+    terms.derivedServiceEndDate <= terms.grantDate
+  ) {
+    c.add("derivedServiceEndDate", "must be after grantDate");
   }
 }
 
@@ -553,6 +668,32 @@ function validatePreferredStockInstrumentTerms(terms: Record<string, unknown>, c
     }
     c.merge(vc);
   }
+
+  if (terms.liquidationPreference !== undefined && terms.liquidationPreference !== null) {
+    const lc = c.child("liquidationPreference");
+    const lp = terms.liquidationPreference;
+    if (!isPlainObject(lp)) {
+      lc.add(
+        "",
+        "must be an object with seniorityRank, originalIssuePricePerShare, liquidationPreferenceMultiple, and participating when provided"
+      );
+    } else {
+      if (lp.seriesName !== undefined && lp.seriesName !== null && typeof lp.seriesName !== "string") {
+        lc.add("seriesName", "must be a string when provided");
+      }
+      if (typeof lp.seniorityRank !== "number" || !Number.isFinite(lp.seniorityRank)) {
+        lc.add("seniorityRank", "is required and must be a number (lower = paid first)");
+      }
+      lc.requireDecimal(lp, "originalIssuePricePerShare");
+      lc.requireDecimal(lp, "liquidationPreferenceMultiple");
+      lc.requireBoolean(lp, "participating");
+      lc.optionalDecimal(lp, "participationCapMultiple");
+      if (lp.participating !== true && lp.participationCapMultiple !== undefined && lp.participationCapMultiple !== null) {
+        lc.add("participationCapMultiple", "only applies to a participating class (participating: true) — remove it or set participating: true");
+      }
+    }
+    c.merge(lc);
+  }
 }
 
 /** dispatch.ts's RestrictedStockInstrumentTerms — used by RESTRICTED_STOCK. Exactly a
@@ -594,6 +735,35 @@ export function validateInstrumentTerms(type: InstrumentTypeForDispatch, terms: 
 
   switch (type) {
     case "STOCK_OPTION":
+      // conditionType discriminates STOCK_OPTION's three ASC 718 treatments — see
+      // StockOptionInstrumentTerms's doc comment in dispatch.ts. Absent/"service" is
+      // the ordinary, pre-existing case (every STOCK_OPTION grant recorded before this
+      // discriminator existed). Strike price is required for a real option (see
+      // ServiceConditionGrant.strikePrice's doc comment in vesting.ts) — RSU has no
+      // strike, so it's the only OTHER type that ever calls validateServiceCondition
+      // Grant, and it doesn't pass requireStrikePrice.
+      if (terms.conditionType === "performance") {
+        validateStockOptionPerformanceConditionTerms(terms, root);
+      } else if (terms.conditionType === "market") {
+        validateStockOptionMarketConditionTerms(terms, root);
+      } else if (terms.conditionType !== undefined && terms.conditionType !== "service") {
+        root.add("conditionType", 'must be "service", "performance", "market", or omitted (defaults to "service")');
+      } else {
+        validateServiceConditionGrant(terms, root, { requireStrikePrice: true });
+      }
+      // v0.33.0 — isIncentiveStockOption applies uniformly across all three
+      // condition-type variants (see its doc comment in dispatch.ts): optional
+      // boolean, but claiming ISO status requires a strikePrice even for the
+      // performance/market variants that otherwise leave it optional — Form 3921 has
+      // no way to report an unknown exercise price.
+      if (terms.isIncentiveStockOption !== undefined && terms.isIncentiveStockOption !== null) {
+        if (typeof terms.isIncentiveStockOption !== "boolean") {
+          root.add("isIncentiveStockOption", "must be a boolean when provided");
+        } else if (terms.isIncentiveStockOption === true && !isDecimalValue(terms.strikePrice)) {
+          root.add("strikePrice", "is required when isIncentiveStockOption is true — Form 3921 needs a real exercise price, not \"unknown\"");
+        }
+      }
+      break;
     case "RSU":
       validateServiceConditionGrant(terms, root);
       break;

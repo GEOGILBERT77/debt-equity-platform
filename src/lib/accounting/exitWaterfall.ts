@@ -201,3 +201,29 @@ export function buildExitWaterfall(exitProceeds: DecimalValue, classes: Waterfal
 
   return { exitProceeds: proceeds, classResults, totalDistributed, undistributed };
 }
+
+/**
+ * Scenario analysis — the same class stack run at several different exit values, so
+ * "what does each class get at a $20M exit vs. a $100M exit" is one function call
+ * instead of the caller looping `buildExitWaterfall` by hand. Nothing new is computed
+ * here: each scenario is an entirely independent `buildExitWaterfall` call (the
+ * non-participating conversion test in particular depends on the exit value itself,
+ * so scenarios can't share intermediate work even if that looked tempting) — this is
+ * purely a convenience wrapper for rendering a comparison table.
+ */
+export interface ExitWaterfallScenario {
+  label: string;
+  exitProceeds: DecimalValue;
+}
+
+export interface ExitWaterfallScenarioResult {
+  label: string;
+  result: ExitWaterfallResult;
+}
+
+export function buildExitWaterfallScenarios(
+  scenarios: ExitWaterfallScenario[],
+  classes: WaterfallClassInput[]
+): ExitWaterfallScenarioResult[] {
+  return scenarios.map((s) => ({ label: s.label, result: buildExitWaterfall(s.exitProceeds, classes) }));
+}

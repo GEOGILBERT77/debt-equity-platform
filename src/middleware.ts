@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, refreshSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import { verifyPortalSessionToken, PORTAL_SESSION_COOKIE_NAME } from "@/lib/auth/portalSession";
 import { parseCookieHeader } from "@/lib/auth/access";
 
 /**
@@ -63,6 +64,12 @@ import { parseCookieHeader } from "@/lib/auth/access";
  * out regardless of how well the underlying browser-platform mitigations hold up —
  * that remains a real, separate future item if a specific review calls for it.
  *
+ * STAKEHOLDER PORTAL (v0.35.0): `/portal/**` and `/api/portal/**` are gated by a
+ * completely separate branch near the top of `middleware()` below, using their own
+ * cookie (`portal_session`) and verify function — never the admin session logic below.
+ * See `portalSession.ts`'s module doc comment for why these two systems are kept fully
+ * independent rather than sharing any code path.
+ *
  * SLIDING IDLE TIMEOUT (v0.20.0): every successfully-verified request now reissues
  * the session cookie via `refreshSessionToken` (session.ts), extending `expiresAt`
  * from "now" rather than leaving the original login-time expiry in place — see that
@@ -71,19 +78,52 @@ import { parseCookieHeader } from "@/lib/auth/access";
  * is deliberately NOT checked here.
  */
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth/login",
+  "/api/auth/logout",
+  // v0.35.0 — the stakeholder portal's own login/invite-acceptance surface. These are
+  // reachable with no session of EITHER kind (admin or portal) — same reasoning as
+  // /login and /api/auth/login above, just for the portal's separate identity system.
+  "/portal/login",
+  "/portal/accept-invite",
+  "/api/portal/login",
+  "/api/portal/accept-invite",
+  "/api/portal/logout",
+];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p);
 }
 
+/** `/portal/**` and `/api/portal/**` (minus the public paths above, already handled)
+ * are a COMPLETELY SEPARATE auth namespace from the rest of this app — see
+ * `portalSession.ts`'s module doc comment for why the admin and portal session systems
+ * are deliberately never allowed to cross. This just decides which branch below to
+ * run; it does not itself grant or deny anything. */
+function isPortalPath(pathname: string): boolean {
+  return pathname === "/portal" || pathname.startsWith("/portal/") || pathname.startsWith("/api/portal/");
+}
+
 /** Applies a baseline set of security response headers to any NextResponse this
  * middleware returns. Deliberately conservative on CSP — `default-src 'self'` plus
- * `'unsafe-inline'` for styles (this app's pages use plenty of inline `style={{...}}`
- * React props, which compile to inline styles) rather than a stricter nonce-based
+ * `'unsafe-inline'` for both styles AND scripts, rather than a stricter nonce-based
  * policy, which would need real wiring through Next.js's own CSP nonce support to do
- * correctly. Tightening this further is called out as its own open item once any
- * third-party script (analytics, a chat widget) is actually added — see the README. */
+ * correctly. Styles need it because this app's pages use plenty of inline
+ * `style={{...}}` React props, which compile to inline `style="..."` attributes.
+ * Scripts need it for a more fundamental reason that has nothing to do with this app's
+ * own code: the Next.js App Router itself streams Server Component output to the
+ * browser via inline `<script>` tags (`self.__next_f.push(...)`) that push each chunk
+ * into the page as it arrives — that's Next.js's own hydration/streaming mechanism,
+ * not something this app opted into. Without `'unsafe-inline'` on `script-src`, the
+ * browser blocks every one of those inline scripts, so no streamed content ever makes
+ * it into the visible page at all — the exact "silently blank white page after login"
+ * bug this fixes (caught after a real deploy; the CSP violation only shows up in the
+ * browser console, never in a server-side build or test log, which is why the earlier,
+ * scripts-omitted version of this header passed every check up to this point).
+ * Tightening this further (a real nonce-based policy) is called out as its own open
+ * item once any third-party script (analytics, a chat widget) is actually added — see
+ * the README. */
 function withSecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("X-Frame-Options", "DENY");
@@ -106,6 +146,36 @@ export async function middleware(req: NextRequest) {
 
   const isApiRoute = pathname.startsWith("/api/");
   const secret = process.env.SESSION_SECRET;
+
+  // v0.35.0 — the stakeholder portal branch. Completely separate from everything
+  // below: a different cookie (`portal_session`, not `session`), a different verify
+  // function (`verifyPortalSessionToken`, which knows nothing about `User`), and a
+  // different failure destination (`/portal/login`, not `/login`). No sliding
+  // idle-timeout refresh here — portalSession.ts's module doc comment explains why a
+  // fixed TTL is the deliberate v1 choice for this read-only surface.
+  if (isPortalPath(pathname)) {
+    if (!secret) {
+      return withSecurityHeaders(
+        isApiRoute
+          ? NextResponse.json({ error: "Server is not configured for login (SESSION_SECRET is unset)." }, { status: 500 })
+          : new NextResponse("Server is not configured for login (SESSION_SECRET is unset).", { status: 500 })
+      );
+    }
+
+    const portalToken = parseCookieHeader(req.headers.get("cookie"), PORTAL_SESSION_COOKIE_NAME);
+    const portalPayload = portalToken ? await verifyPortalSessionToken(portalToken, secret) : null;
+
+    if (portalPayload) {
+      return withSecurityHeaders(NextResponse.next());
+    }
+
+    if (isApiRoute) {
+      return withSecurityHeaders(NextResponse.json({ error: "Not logged in." }, { status: 401 }));
+    }
+    const portalLoginUrl = new URL("/portal/login", req.url);
+    portalLoginUrl.searchParams.set("next", pathname + req.nextUrl.search);
+    return withSecurityHeaders(NextResponse.redirect(portalLoginUrl));
+  }
 
   if (!secret) {
     // Fail closed, not open — see the doc comment above.

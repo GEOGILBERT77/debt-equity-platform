@@ -3,11 +3,15 @@ import { db } from "@/lib/db";
 import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
 
 /**
- * PATCH /api/entities/:id { "name"?, "reportingCurrency"? } — renames an entity and/or
- * changes its reporting currency. Requires at least EDITOR (the same bar `POST .../
- * stakeholders` and `POST /api/instruments` use for writes on an entity you already
- * have access to — OWNER is reserved for access-granting and the destructive DELETE
- * below, not for ordinary edits).
+ * PATCH /api/entities/:id { "name"?, "reportingCurrency"?, "employerIdentificationNumber"?,
+ * "address"? } — renames an entity, changes its reporting currency, and/or sets the
+ * v0.33.0 tax/compliance filer fields (see prisma/schema.prisma's doc comment on
+ * Entity.employerIdentificationNumber — these are what a Form 3921 needs for its
+ * TRANSFEROR box, and computeForm3921Data refuses to assemble a form without them).
+ * Requires at least EDITOR (the same bar `POST .../stakeholders` and `POST
+ * /api/instruments` use for writes on an entity you already have access to — OWNER is
+ * reserved for access-granting and the destructive DELETE below, not for ordinary
+ * edits).
  *
  * DELETE /api/entities/:id — requires OWNER specifically: deleting the top of the
  * Entity -> Stakeholder -> Instrument hierarchy is irreversible and, per the schema's
@@ -38,9 +42,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (access instanceof NextResponse) return access;
 
   const body = await req.json().catch(() => ({}));
-  const { name, reportingCurrency } = body ?? {};
+  const { name, reportingCurrency, employerIdentificationNumber, address } = body ?? {};
 
-  const data: { name?: string; reportingCurrency?: string } = {};
+  const data: { name?: string; reportingCurrency?: string; employerIdentificationNumber?: string | null; address?: string | null } = {};
   if (name !== undefined) {
     if (typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json({ error: "name must be a non-empty string when provided" }, { status: 400 });
@@ -53,8 +57,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
     data.reportingCurrency = reportingCurrency.trim().toUpperCase();
   }
+  if (employerIdentificationNumber !== undefined) {
+    data.employerIdentificationNumber = employerIdentificationNumber ? String(employerIdentificationNumber).trim() : null;
+  }
+  if (address !== undefined) {
+    data.address = address ? String(address).trim() : null;
+  }
   if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "Provide at least one of: name, reportingCurrency" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Provide at least one of: name, reportingCurrency, employerIdentificationNumber, address" },
+      { status: 400 }
+    );
   }
 
   const entity = await db.entity.update({ where: { id: params.id }, data });

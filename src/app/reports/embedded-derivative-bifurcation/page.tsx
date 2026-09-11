@@ -1,5 +1,6 @@
 import EmbeddedDerivativeBifurcationCalculator from "@/app/components/EmbeddedDerivativeBifurcationCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * ASC 815-15-25 embedded conversion feature bifurcation calculator (v0.20.0) — same
@@ -19,12 +20,12 @@ import Link from "next/link";
  */
 export default function EmbeddedDerivativeBifurcationPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Embedded derivative bifurcation calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Assesses whether a conversion feature embedded in a debt host must be bifurcated and accounted for
         separately as a derivative (ASC 815-15-25), applying the ASC 815-10-15-74 scope exception that makes
         plain-vanilla convertible debt's conversion feature almost never bifurcated in practice. This is a

@@ -18,6 +18,13 @@ import { hasRequiredRole, parseCookieHeader, EntityRoleName } from "./access";
 export interface CurrentUser {
   id: string;
   email: string;
+  /// v0.21.0 "default entity" — see prisma/schema.prisma's doc comment on
+  /// User.defaultEntityId. Carried on CurrentUser (rather than a separate lookup every
+  /// caller would otherwise need) since resolveUserFromToken below already loads the
+  /// full User row for the account-still-exists / sessionVersion checks — this is free.
+  /// `null` means "no default set yet," never "not loaded" — every caller of
+  /// getCurrentUser/getCurrentUserFromToken gets the real, current value.
+  defaultEntityId: string | null;
 }
 
 /** Shared by both public entry points below: verifies the session token's signature
@@ -46,7 +53,7 @@ async function resolveUserFromToken(token: string | null): Promise<CurrentUser |
   if (!user) return null;
   if (user.sessionVersion !== payload.sessionVersion) return null;
 
-  return { id: user.id, email: user.email };
+  return { id: user.id, email: user.email, defaultEntityId: user.defaultEntityId };
 }
 
 /** For API route handlers, which have the raw `Cookie` request header

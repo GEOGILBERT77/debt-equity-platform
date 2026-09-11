@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { theme } from "@/lib/theme";
 
 const STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR", "ENTITY_HOLDER"] as const;
 
@@ -95,11 +96,11 @@ export function StakeholderRowActions({
           onClick={handleDelete}
           disabled={status === "deleting"}
           title={hasInstruments ? "Still holds instruments — remove those first" : undefined}
-          style={{ ...linkButtonStyle, color: hasInstruments ? "#999" : "#a33" }}
+          style={{ ...linkButtonStyle, color: hasInstruments ? theme.inkMuted : theme.danger.fg }}
         >
           {status === "deleting" ? "Deleting…" : "Delete"}
         </button>
-        {message && <div style={{ color: "crimson", fontSize: "0.78rem" }}>{message}</div>}
+        {message && <div style={{ color: theme.danger.fg, fontSize: "0.78rem" }}>{message}</div>}
       </span>
     );
   }
@@ -133,7 +134,7 @@ export function StakeholderRowActions({
           Cancel
         </button>
       </div>
-      {message && <span style={{ color: "crimson", fontSize: "0.78rem" }}>{message}</span>}
+      {message && <span style={{ color: theme.danger.fg, fontSize: "0.78rem" }}>{message}</span>}
     </div>
   );
 }
@@ -141,7 +142,7 @@ export function StakeholderRowActions({
 const linkButtonStyle: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#2563eb",
+  color: theme.accent,
   cursor: "pointer",
   padding: 0,
   fontSize: "0.85rem",
@@ -150,9 +151,9 @@ const linkButtonStyle: React.CSSProperties = {
 const smallInputStyle: React.CSSProperties = { padding: "0.25rem", fontSize: "0.85rem" };
 const smallButtonStyle: React.CSSProperties = {
   padding: "0.2rem 0.5rem",
-  border: "1px solid #999",
+  border: `1px solid ${theme.border}`,
   borderRadius: 4,
-  background: "#fff",
+  background: theme.surface,
   cursor: "pointer",
   fontSize: "0.8rem",
 };

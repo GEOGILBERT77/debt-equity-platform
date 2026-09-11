@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { buildAuditTrail, summarizeAttributionCoverage, AuditTrailInput } from "@/lib/accounting/auditTrail";
 import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
+import { theme } from "@/lib/theme";
 
 /**
  * Compliance / audit-trail report (v0.19.0) — front-end counterpart to
@@ -16,7 +17,7 @@ export default async function AuditTrailPage({ searchParams }: { searchParams: {
   const entityId = searchParams.entityId;
   if (!entityId) {
     return (
-      <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+      <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
           Pass <code>?entityId=...</code> to view this report, or go to <Link href="/">the entity list</Link>.
         </p>
@@ -77,17 +78,17 @@ export default async function AuditTrailPage({ searchParams }: { searchParams: {
   const coverage = summarizeAttributionCoverage(trail);
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
         <Link href={`/reports?entityId=${entityId}`}>Journal entries report</Link>
       </p>
       <h1>Audit trail</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Every instrument's terms history and every correction, in one chronological feed — a "what and when," not a
         recomputation of the numbers themselves (see the journal entries / financial-statements reports for those).
       </p>
-      <p style={{ color: coverage.coveragePercent < 100 ? "#92400e" : "#166534" }}>
+      <p style={{ color: coverage.coveragePercent < 100 ? theme.warning.fg : theme.success.fg }}>
         User attribution: {coverage.entriesWithKnownUser} of {coverage.totalEntries} entries ({coverage.coveragePercent}%) have a
         known "who." Entries from before this platform tracked who made each change will always show "unknown" — see the
         README's audit-trail note.
@@ -127,4 +128,4 @@ export default async function AuditTrailPage({ searchParams }: { searchParams: {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.5rem", textAlign: "left" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

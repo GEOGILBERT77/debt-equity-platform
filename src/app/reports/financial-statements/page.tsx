@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { money, JournalEntry as DomainJournalEntry } from "@/lib/accounting/types";
 import { buildAccountRollForward, buildStockCompDisclosure, StockCompInstrumentInput } from "@/lib/accounting/reporting";
 import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
+import { theme } from "@/lib/theme";
 
 /**
  * Financial-statement support report (v0.19.0) — the front-end counterpart to
@@ -21,7 +22,7 @@ export default async function FinancialStatementsPage({
   const entityId = searchParams.entityId;
   if (!entityId) {
     return (
-      <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+      <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
           Pass <code>?entityId=...</code> to view this report, or go to <Link href="/">the entity list</Link>.
         </p>
@@ -84,14 +85,14 @@ export default async function FinancialStatementsPage({
   const disclosure = buildStockCompDisclosure(disclosureInputs);
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
         <Link href={`/reports?entityId=${entityId}`}>Journal entries report</Link> {" · "}
         <Link href={`/captable?entityId=${entityId}`}>Cap table</Link>
       </p>
       <h1>Financial statement support</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Period: {periodStart} to {periodEnd}. Reads only closed/reported rows — see the README's "Live preview vs.
         closed/reported numbers" note. Stock-settled SAR is excluded from the disclosure table below (its expense is
         a fair-value remeasurement each period, not amortization of a fixed grant-date total).
@@ -128,7 +129,7 @@ export default async function FinancialStatementsPage({
       {warnings.length > 0 && (
         <ul>
           {warnings.map((w, i) => (
-            <li key={i} style={{ color: "#92400e" }}>
+            <li key={i} style={{ color: theme.warning.fg }}>
               {w}
             </li>
           ))}
@@ -175,4 +176,4 @@ export default async function FinancialStatementsPage({
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.5rem", textAlign: "left" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { theme } from "@/lib/theme";
 
 type PreviewResult = {
   perPeriodDeltas: { label: string; periodEnd: string; originalAmount: string; correctedAmount: string; delta: string }[];
@@ -113,7 +114,7 @@ export function CorrectionPanel({ instrumentId }: { instrumentId: string }) {
   }
 
   return (
-    <div style={{ border: "1px solid #ccc", borderRadius: 4, padding: "1rem", marginTop: "1rem", maxWidth: 700 }}>
+    <div style={{ border: `1px solid ${theme.border}`, borderRadius: 4, padding: "1rem", marginTop: "1rem", maxWidth: 700 }}>
       <h3 style={{ marginTop: 0 }}>Correction — preview, then elect, then commit</h3>
 
       <label style={labelStyle}>
@@ -196,14 +197,14 @@ export function CorrectionPanel({ instrumentId }: { instrumentId: string }) {
             </label>
           )}
 
-          <button onClick={handleCommit} disabled={status === "loading"} style={{ ...buttonStyle, background: "#fee2e2" }}>
+          <button onClick={handleCommit} disabled={status === "loading"} style={{ ...buttonStyle, background: theme.danger.bg }}>
             {status === "loading" ? "Committing…" : `Commit as ${election}`}
           </button>
         </div>
       )}
 
       {message && (
-        <p style={{ color: status === "error" ? "crimson" : "#166534", marginTop: "0.5rem" }}>{message}</p>
+        <p style={{ color: status === "error" ? theme.danger.fg : theme.success.fg, marginTop: "0.5rem" }}>{message}</p>
       )}
     </div>
   );
@@ -211,19 +212,19 @@ export function CorrectionPanel({ instrumentId }: { instrumentId: string }) {
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
-  border: "1px solid #333",
+  border: `1px solid ${theme.border}`,
   borderRadius: 4,
-  background: "#f5f5f5",
+  background: theme.surfaceAlt,
   cursor: "pointer",
 };
 const linkButtonStyle: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#1d4ed8",
+  color: theme.accent,
   cursor: "pointer",
   padding: 0,
   font: "inherit",
 };
 const labelStyle: React.CSSProperties = { display: "block", margin: "0.75rem 0", fontSize: "0.9rem" };
 const inputStyle: React.CSSProperties = { display: "block", width: "100%", padding: "0.4rem", marginTop: "0.25rem" };
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.4rem", textAlign: "left" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left" };

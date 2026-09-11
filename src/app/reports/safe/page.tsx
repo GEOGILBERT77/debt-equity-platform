@@ -1,5 +1,6 @@
 import SafeCalculator from "@/app/components/SafeCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * SAFE (Simple Agreement for Future Equity) classification and accounting calculator
@@ -15,12 +16,12 @@ import Link from "next/link";
  */
 export default function SafePage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>SAFE calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Classifies a SAFE as liability or equity under ASC 480-10-25-14 (a standard cap/discount SAFE, whose share
         count is variable and whose dollar obligation is fixed at inception, is liability-classified by default —
         this is a specific citable criterion, not a judgment call), then produces the issuance and conversion journal

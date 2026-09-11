@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecimalField, DateField, TextField, SelectField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 type Mode = "TEST" | "EXTINGUISHMENT_ENTRY" | "MODIFICATION_LENDER_FEE_ENTRY" | "THIRD_PARTY_COST_ENTRY";
 
@@ -209,7 +210,7 @@ export default function DebtModificationCalculator() {
         {status === "loading" ? "Computing…" : "Compute"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {testResult && (
         <>
@@ -227,10 +228,10 @@ export default function DebtModificationCalculator() {
           <h2>Journal entry</h2>
           <p>
             <strong>{entryResult.date}</strong> — {entryResult.description}
-            {entryResult.ascReference && <span style={{ color: "#666" }}> ({entryResult.ascReference})</span>}
+            {entryResult.ascReference && <span style={{ color: theme.inkMuted }}> ({entryResult.ascReference})</span>}
           </p>
           {gainOrLoss !== null && (
-            <p style={{ color: Number(gainOrLoss) < 0 ? "crimson" : "#166534" }}>
+            <p style={{ color: Number(gainOrLoss) < 0 ? theme.danger.fg : theme.success.fg }}>
               {Number(gainOrLoss) < 0 ? "Loss" : "Gain"} on extinguishment: ${Math.abs(Number(gainOrLoss)).toFixed(2)}
             </p>
           )}
@@ -258,4 +259,4 @@ export default function DebtModificationCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.4rem" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };

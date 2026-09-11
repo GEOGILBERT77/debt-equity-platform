@@ -1,0 +1,54 @@
+/**
+ * v0.34.0 — mirrors src/lib/theme.ts's values as CSS custom properties, for the small
+ * number of places that need a real stylesheet rule instead of an inline `style={{}}`
+ * prop (this file, plus a couple of `:focus-visible`/`::placeholder` rules that inline
+ * styles can't express at all). Every component's own colors still come from
+ * theme.ts directly — these variables exist so the two never have to be kept in sync
+ * by hand for the one thing that *needs* a stylesheet: the page's own <body> tag, and
+ * global focus/placeholder treatment. If you change a color, change it in BOTH files.
+ */
+
+:root {
+  --de-bg: #F3F5F8;
+  --de-surface: #FFFFFF;
+  --de-surface-alt: #E8ECF2;
+  --de-border: #D9DFE8;
+  --de-ink: #1C2733;
+  --de-ink-muted: #5F6E7F;
+  --de-primary: #33455F;
+  --de-primary-hover: #26374D;
+  --de-accent: #1F8A7D;
+}
+
+html {
+  background: var(--de-bg);
+}
+
+body {
+  margin: 0;
+  background: var(--de-bg);
+  color: var(--de-ink);
+  font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* A visible, on-brand focus ring for keyboard navigation — the browser default outline
+   still shows if this rule somehow doesn't apply, so this is additive, not a removal
+   of focus indication. */
+:focus-visible {
+  outline: 2px solid var(--de-accent);
+  outline-offset: 1px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--de-ink-muted);
+  opacity: 0.75;
+}
+
+/* Every plain <input>/<select>/<textarea> across the app goes through
+   FieldPrimitives.tsx, which sets its own inline border/background/radius — this is
+   just a baseline so any input rendered without those inline styles (a stray native
+   element in an older page) doesn't default to the browser's unstyled look. */
+input, select, textarea, button {
+  font-family: inherit;
+}

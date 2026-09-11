@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecimalField, DateField, BoolField, SelectField, TextField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 type Mode = "VESTING_TRANCHES" | "RECOGNITION_ENTRY" | "CUSTOMER_TIMING";
 type CounterpartyType = "VENDOR_OR_CONSULTANT" | "CUSTOMER";
@@ -164,7 +165,7 @@ export default function NonemployeeAwardCalculator() {
         {status === "loading" ? "Computing…" : "Compute"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {tranchesResult && (
         <>
@@ -191,7 +192,7 @@ export default function NonemployeeAwardCalculator() {
           <h2>Journal entry</h2>
           <p>
             <strong>{entryResult.date}</strong> — {entryResult.description}
-            {entryResult.ascReference && <span style={{ color: "#666" }}> ({entryResult.ascReference})</span>}
+            {entryResult.ascReference && <span style={{ color: theme.inkMuted }}> ({entryResult.ascReference})</span>}
           </p>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
@@ -217,4 +218,4 @@ export default function NonemployeeAwardCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.4rem" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };

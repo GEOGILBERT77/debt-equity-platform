@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { theme } from "@/lib/theme";
 import { db } from "@/lib/db";
 import { summarizeByAccount, checkReconciliation } from "@/lib/accounting/reporting";
 import { money, JournalEntry as DomainJournalEntry } from "@/lib/accounting/types";
-import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
 
 /**
  * Journal entries report — the front-end counterpart to GET /api/reports/journal-
@@ -19,10 +21,15 @@ import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
 export default async function ReportsPage({ searchParams }: { searchParams: { entityId?: string } }) {
   const entityId = searchParams.entityId;
   if (!entityId) {
+    // v0.21.0 — fall back to the user's default entity before showing the "pass
+    // ?entityId=..." message, same reasoning as instruments/new/page.tsx.
+    const user = await requireCurrentUser();
+    if (user.defaultEntityId) redirect(`/reports?entityId=${user.defaultEntityId}`);
     return (
-      <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+      <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
-          Pass <code>?entityId=...</code> to view a report, or go to <Link href="/">the entity list</Link>.
+          Pass <code>?entityId=...</code> to view a report, or go to <Link href="/">the entity list</Link> (or
+          set a default entity there).
         </p>
       </main>
     );
@@ -53,7 +60,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { en
   const reconciliationByCurrency = checkReconciliation(entries);
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       {/* The rest of this page's sibling reports and every standalone ASC calculator moved into the top nav
           bar's "GAAP reports" menu (see NavBar.tsx) — this breadcrumb now only keeps the two links that are
           specific to THIS report/entity rather than duplicating global navigation. */}
@@ -62,7 +69,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { en
         <Link href={`/captable?entityId=${entityId}`}>Cap table</Link>
       </p>
       <h1>Journal entries report</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Reads only closed/reported rows — a period that hasn't been closed yet (see each instrument's page for a
         "Close" action) won't show up here.
       </p>
@@ -70,7 +77,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { en
       <h2>Reconciliation</h2>
       {reconciliationByCurrency.length === 0 && <p>Nothing closed yet.</p>}
       {reconciliationByCurrency.map((r) => (
-        <p key={r.currency} style={{ color: r.balanced ? "#166534" : "crimson" }}>
+        <p key={r.currency} style={{ color: r.balanced ? theme.success.fg : theme.danger.fg }}>
           {r.currency}: {r.balanced ? "Balanced" : "OUT OF BALANCE"} — debits {r.totalDebits.toFixed(2)}, credits{" "}
           {r.totalCredits.toFixed(2)}
           {!r.balanced && ` (difference ${r.difference.toFixed(2)})`}
@@ -142,4 +149,4 @@ export default async function ReportsPage({ searchParams }: { searchParams: { en
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.5rem", textAlign: "left" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

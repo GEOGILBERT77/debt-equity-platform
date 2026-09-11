@@ -36,20 +36,41 @@
 //    check actually happens.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" keeps local development working (whatever OS/arch you run `prisma
+  // generate` on yourself); "rhel-openssl-3.0.x" is Vercel's actual Node.js serverless
+  // Function runtime — a different OS/architecture than the build container "native"
+  // targets, which is exactly the mismatch DEPLOYMENT.md's troubleshooting section
+  // flagged as a likely first-deploy failure mode, without hard-coding a value that
+  // couldn't be verified against a live deploy at the time. Confirmed necessary here:
+  // without this, `prisma generate` (via postinstall) only produces the query engine
+  // binary for the build machine, so `db.user.findUnique` and every other real query
+  // throws a PrismaClientInitializationError the first time a route actually touches
+  // the database in production — which Next.js's production error handling then
+  // returns as a bare 500 with an empty body, not a helpful error message, which is
+  // exactly what showed up in the browser at login.
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider  = "postgresql"
   // Supabase (and most managed Postgres providers used from a serverless host like
-  // Vercel) need two different connection strings: DATABASE_URL is the pooled
-  // connection (PgBouncer, port 6543, "?pgbouncer=true") that Prisma Client uses at
-  // runtime, since a serverless function can't hold a persistent connection the way a
-  // long-running server can; DIRECT_URL is the unpooled connection (port 5432) that
-  // `prisma migrate` / `prisma db push` need, since schema changes can't run through a
-  // transaction pooler. See DEPLOYMENT.md for exactly where to copy each of these from
-  // in the Supabase dashboard.
+  // Vercel) need two different connection strings: a pooled connection (PgBouncer,
+  // port 6543, "?pgbouncer=true") that Prisma Client uses at runtime, since a
+  // serverless function can't hold a persistent connection the way a long-running
+  // server can; and an unpooled connection (port 5432) that `prisma migrate` /
+  // `prisma db push` need, since schema changes can't run through a transaction
+  // pooler.
+  //
+  // UPDATED to read `POSTGRES_PRISMA_URL` / `POSTGRES_URL_NON_POOLING` instead of a
+  // hand-set `DATABASE_URL` / `DIRECT_URL` — these are the names the Vercel Marketplace
+  // "Connect Existing Project" Supabase integration creates automatically, populated
+  // directly from Supabase's own systems rather than a person copying, retyping, or
+  // reassembling a connection string by hand (which is exactly where a stray character
+  // or a leftover "[YOUR-PASSWORD]" placeholder was slipping in during manual setup).
+  // If you ever move off that integration, add `DATABASE_URL` / `DIRECT_URL` back as
+  // plain environment variables and swap these two names back — see DEPLOYMENT.md,
+  // which documents both paths.
   url       = env("POSTGRES_PRISMA_URL")
   directUrl = env("POSTGRES_URL_NON_POOLING")
 }
@@ -63,16 +84,32 @@ model Entity {
   /// scope note in src/lib/accounting/types.ts and the ASC 830-20 remeasurement engine
   /// in fxTranslation.ts for the one place actual currency conversion happens.
   reportingCurrency String   @default("USD")
+  /// v0.33.0 — the filer's own identification for tax/compliance filings this entity
+  /// generates on its stakeholders' behalf (Form 3921's "Transferor corporation" name/
+  /// address/EIN box). NULLABLE: every entity created before this feature existed has
+  /// neither, and plenty of entities will never need to produce a real filing at all —
+  /// see optionTaxCompliance.ts, which refuses to assemble a Form 3921 (rather than
+  /// silently leaving the EIN blank on a real tax document) when either is missing.
+  employerIdentificationNumber String?
+  address                      String?
   createdAt    DateTime      @default(now())
   stakeholders Stakeholder[]
   instruments  Instrument[]
   documents    Document[]
+  /// v0.33.0 — see TaxFilingRecord's own doc comment.
+  taxFilingRecords TaxFilingRecord[]
+  /// v0.36.0 — see BoardConsent's own doc comment.
+  boardConsents    BoardConsent[]
   /// Who can see/edit this entity's data at all, and at what role — see User/
   /// EntityAccess below and src/lib/auth/access.ts. An Entity with no EntityAccess
   /// rows is unreachable by anyone through the app (not even its creator) — every
   /// entity-creation code path must create the creator's OWNER row in the same
   /// transaction as the Entity itself, never as a separate step.
   access       EntityAccess[]
+  /// Reverse side of User.defaultEntityId above — everyone who currently has THIS
+  /// entity set as their default. Not rendered anywhere; exists only because Prisma
+  /// requires both sides of a relation to be declared.
+  defaultForUsers User[] @relation("UserDefaultEntity")
 }
 
 /// One real person who can log into this app — as distinct from a Stakeholder, which
@@ -97,6 +134,19 @@ model User {
   sessionVersion Int          @default(0)
   createdAt    DateTime       @default(now())
   access       EntityAccess[]
+  /// v0.21.0 — "default entity" (requested directly by a user who kept landing on
+  /// NavBar's "Pass ?entityId=..." message after clicking "New transactions" with no
+  /// entity in the current URL — see NavBar.tsx's doc comment, which flagged exactly
+  /// this gap before it was reported). NULLABLE: a brand-new user has none yet, and
+  /// `POST /api/entities` sets this automatically the first time a user creates an
+  /// entity (see that route) so the common single-entity user never has to take an
+  /// extra step; a user managing several entities can change it from the home page's
+  /// "Set as default" control (EntityRowActions.tsx). `onDelete: SetNull` deliberately
+  /// (not the RESTRICT every other FK in this schema uses) — losing your default
+  /// because the entity itself was deleted should degrade gracefully back to "no
+  /// default," never block the entity's deletion.
+  defaultEntityId String?
+  defaultEntity   Entity?        @relation("UserDefaultEntity", fields: [defaultEntityId], references: [id], onDelete: SetNull)
   /// Reverse sides of the v0.19.0 audit-trail attribution columns — see
   /// InstrumentTermVersion.createdByUserId and Correction.createdByUserId. Named
   /// relations (not Prisma's default inferred name) purely for clarity, since a plain
@@ -104,6 +154,20 @@ model User {
   /// to `access` above.
   createdTermVersions InstrumentTermVersion[] @relation("TermVersionCreatedBy")
   createdCorrections  Correction[]            @relation("CorrectionCreatedBy")
+  approvedAmortizationSchedules AmortizationScheduleApproval[] @relation("AmortizationApprovedBy")
+  /// v0.33.0 — reverse sides of the option tax/compliance feature's attribution
+  /// columns, same "who recorded this, not just what and when" reasoning as
+  /// InstrumentTermVersion.createdByUserId above.
+  recordedOptionExercises   OptionExerciseEvent[]   @relation("OptionExerciseRecordedBy")
+  recordedShareDispositions ShareDispositionEvent[] @relation("ShareDispositionRecordedBy")
+  filedTaxFilingRecords     TaxFilingRecord[]       @relation("TaxFilingRecordFiledBy")
+  /// v0.35.0 — reverse side of the stakeholder portal's invite system (see
+  /// PortalInvite below): which admin generated a given invite, for the same
+  /// "who did this, not just what and when" audit reasoning as every other
+  /// createdByUserId/recordedByUserId column in this schema.
+  createdPortalInvites PortalInvite[] @relation("PortalInviteCreatedBy")
+  /// v0.36.0 — see BoardConsent's own doc comment.
+  createdBoardConsents BoardConsent[]
 }
 
 enum EntityRole {
@@ -155,11 +219,152 @@ model Stakeholder {
   email       String?
   phone       String?
   address     String?
+  /// v0.33.0 — SSN (individual) or EIN (an ADVISOR/ENTITY_HOLDER that's itself a
+  /// business) for tax/compliance filings this platform generates on this
+  /// stakeholder's behalf (Form 3921's recipient TIN box). NULLABLE for every
+  /// stakeholder recorded before this existed, and for anyone who simply never needs
+  /// a real tax filing produced.
+  ///
+  /// SECURITY — READ BEFORE DEPLOYING: this column is a government tax-ID number
+  /// stored as PLAIN TEXT, the same way every other free-text field on this model is.
+  /// That is NOT an acceptable production posture for an SSN. Before this field is
+  /// actually populated with real data outside a sandbox/demo, add field-level
+  /// encryption at rest (e.g. pgcrypto's pgp_sym_encrypt/decrypt, or application-layer
+  /// encryption before the value ever reaches Prisma) and restrict which
+  /// roles/endpoints can read it back in full (a report or UI that only needs to
+  /// confirm "a TIN is on file" should never fetch the plaintext value at all). This
+  /// migration deliberately does NOT implement that — it's a deployment/infra decision
+  /// (which KMS, which access-control layer) that belongs to whoever operates the real
+  /// database, not something to guess at here.
+  taxIdNumber String?
   instruments Instrument[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  /// v0.35.0 — reverse sides of the stakeholder self-service portal (see
+  /// StakeholderUser/StakeholderAccess/PortalInvite below). A Stakeholder can have at
+  /// most one live PortalInvite outstanding in practice (the invite route reuses an
+  /// unexpired/unused one rather than piling up duplicates — see that route's doc
+  /// comment) but this is modeled as a list since nothing in the schema itself needs
+  /// to enforce that; `portalAccess` is empty until someone actually accepts an invite.
+  portalAccess  StakeholderAccess[]
+  portalInvites PortalInvite[]
 
   @@index([entityId])
+}
+
+/// v0.35.0 — stakeholder/investor self-service portal (George, verbatim: "definitely
+/// want to build out the stakeholder/investor self service portal"). v1 SCOPE, locked
+/// in before building: VIEW-ONLY (holdings, vesting, exercise/disposition history,
+/// documents — no exercise requests, no e-signature, no tax elections in this pass);
+/// every StakeholderType gets access (not employees only); invites are an
+/// admin-generated one-time link the admin copies and sends however they choose — no
+/// email vendor wired up (Communications page is still a placeholder, see that file).
+///
+/// WHY A SEPARATE IDENTITY MODEL FROM `User`, NOT A PASSWORD DIRECTLY ON
+/// `Stakeholder`: a `Stakeholder` row is scoped to exactly one `Entity` (design note
+/// at the top of this file — multi-tenancy is a join table, not a tenantId column), but
+/// the same real person can easily BE a stakeholder of more than one entity on this
+/// platform — an investor with stakes in several portfolio companies, an advisor to two
+/// different startups, a founder who's also an angel investor elsewhere. Putting
+/// login credentials directly on `Stakeholder` would force that person into a separate
+/// login per company, which is exactly the wrong UX for a "log in once, see everything
+/// you hold" portal. So this mirrors the EXACT same pattern this schema already uses
+/// for admin access — `User` (one identity) + `EntityAccess` (a join table granting
+/// that identity access to a specific entity) — as `StakeholderUser` (one identity,
+/// matched by email) + `StakeholderAccess` (a join table granting that identity
+/// visibility into one specific `Stakeholder` record, i.e. one specific entity's cap
+/// table entry for them). This is a fully separate, parallel identity system: a
+/// `StakeholderUser` can never log into the admin side, and a `User` can never log
+/// into the portal, even if they happen to share an email address — see
+/// src/lib/auth/portalSession.ts's doc comment for why the session tokens themselves
+/// are also a completely separate type, not a reused `SessionPayload`.
+model StakeholderUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  /// Same "scrypt:<saltHex>:<hashHex>" format as User.passwordHash (reuses
+  /// passwordHashing.ts directly — it was already fully generic, not User-specific).
+  /// NULLABLE: a StakeholderUser row can exist BEFORE a password is set — created the
+  /// moment an admin first invites that email, so a second invite (a different
+  /// stakeholder record, same person, e.g. a second portfolio company) can find and
+  /// reuse the same identity instead of erroring on a duplicate email. The
+  /// accept-invite flow requires setting a password before it will treat the account
+  /// as active if this is still null; see POST /api/portal/accept-invite.
+  passwordHash   String?
+  /// "Log out everywhere" counter — identical mechanism to User.sessionVersion, see
+  /// that field's doc comment. Independent counter: revoking a person's ADMIN sessions
+  /// (if they happen to also have a User account) never touches their PORTAL sessions
+  /// and vice versa, since these are genuinely separate identities.
+  sessionVersion Int      @default(0)
+  createdAt      DateTime @default(now())
+  access         StakeholderAccess[]
+  invitesAccepted PortalInvite[] @relation("PortalInviteAcceptedBy")
+}
+
+/// The portal's multi-tenancy join table — see StakeholderUser's doc comment for why
+/// this exists as a separate table rather than a direct FK on Stakeholder. Created
+/// once, at the moment an invite is ACCEPTED (never at invite-creation time — an
+/// unaccepted invite grants nothing yet, see PortalInvite below).
+model StakeholderAccess {
+  id                String          @id @default(cuid())
+  stakeholderUserId String
+  stakeholderUser   StakeholderUser @relation(fields: [stakeholderUserId], references: [id])
+  stakeholderId     String
+  stakeholder       Stakeholder     @relation(fields: [stakeholderId], references: [id])
+  createdAt         DateTime        @default(now())
+  /// v0.36.0 — when true, this specific access grant sees the ENTITY'S FULL cap table
+  /// (read-only) on the portal instead of just this one Stakeholder record's own
+  /// holdings — the "board member portal" gap: a board observer needs to see the
+  /// whole ownership picture, not one row of it. Deliberately a flag on the ACCESS
+  /// GRANT, not a new StakeholderType or a role on StakeholderUser: (a) it keeps the
+  /// blast radius to exactly the portal's own rendering logic, rather than touching
+  /// every place in this codebase that already branches on StakeholderType
+  /// (EMPLOYEE/INVESTOR/DEBT_HOLDER/ADVISOR/ENTITY_HOLDER); and (b) it's naturally
+  /// per-entity, matching the fact that StakeholderAccess itself already is — the
+  /// same person could be an ordinary stakeholder in one entity and a board observer
+  /// in another. Set at invite-acceptance time from PortalInvite.grantsBoardObserverAccess
+  /// below; never changed after that except by revoking and re-inviting.
+  boardObserver     Boolean         @default(false)
+
+  @@unique([stakeholderUserId, stakeholderId])
+  @@index([stakeholderId])
+}
+
+/// A single-use, expiring link an admin generates for one specific Stakeholder row
+/// (POST /api/stakeholders/[id]/portal-invite, requires EDITOR — see that route) and
+/// then copies and sends to that person however they choose (no email vendor exists
+/// yet — see communications/page.tsx). Only the HASH of the actual token is stored
+/// (`tokenHash`, same reasoning as password storage: if this table's contents ever
+/// leaked, a stored raw token would let anyone immediately claim that stakeholder's
+/// portal access, whereas a hash is useless without the original token) — the raw
+/// token is shown to the inviting admin exactly once, in the API response, and never
+/// persisted anywhere in plaintext.
+model PortalInvite {
+  id              String    @id @default(cuid())
+  stakeholderId   String
+  stakeholder     Stakeholder @relation(fields: [stakeholderId], references: [id])
+  /// SHA-256 hex of the raw token — see portalInvite.ts. Not scrypt: this is a
+  /// high-entropy, single-use random secret rather than a low-entropy human-chosen
+  /// password, so a fast cryptographic hash is the right (and standard) tool here, not
+  /// a slow KDF meant to resist brute-forcing a small guess space.
+  tokenHash       String    @unique
+  createdByUserId String
+  createdByUser   User      @relation("PortalInviteCreatedBy", fields: [createdByUserId], references: [id])
+  expiresAt       DateTime
+  /// NULL until accepted. Checked alongside expiresAt by POST /api/portal/accept-invite
+  /// — a used-but-unexpired token must still be rejected (one-time use, not "use until
+  /// expiry").
+  usedAt            DateTime?
+  acceptedByUserId  String?
+  acceptedByUser    StakeholderUser? @relation("PortalInviteAcceptedBy", fields: [acceptedByUserId], references: [id])
+  createdAt         DateTime  @default(now())
+  /// v0.36.0 — carried onto the resulting StakeholderAccess.boardObserver at
+  /// acceptance time (see that field's doc comment). Set by the admin when generating
+  /// the invite link (a new checkbox on InvitePortalAccessButton), not by the
+  /// stakeholder accepting it — a board-observer grant is a decision the ADMIN makes
+  /// about who gets full-cap-table visibility, never a self-service upgrade.
+  grantsBoardObserverAccess Boolean @default(false)
+
+  @@index([stakeholderId])
 }
 
 enum InstrumentType {
@@ -210,6 +415,22 @@ model Instrument {
   journalEntries  JournalEntry[]
   corrections     Correction[]
   documents       Document[]
+  /// Approved, full-service-period monthly amortization tables — see
+  /// AmortizationScheduleApproval's doc comment. Usually 0 or 1 CURRENT approval per
+  /// instrument (more than one only when a modification triggered a re-approval —
+  /// older ones stay for history, never deleted).
+  amortizationApprovals AmortizationScheduleApproval[]
+  /// v0.33.0 — real exercise events for a STOCK_OPTION instrument (date, quantity,
+  /// exercise price, and the FMV at exercise a tax filing needs) — see
+  /// OptionExerciseEvent's own doc comment for why this is a separate append-only
+  /// event log rather than another InstrumentTermVersion.
+  exerciseEvents  OptionExerciseEvent[]
+  /// v0.33.0 — reverse side of TaxFilingRecord.instrumentId, used only by
+  /// ELECTION_83B_DEADLINE rows (see that field's doc comment) — an 83(b) deadline
+  /// traces to the grant/instrument itself, not to an OptionExerciseEvent.
+  taxFilingRecords TaxFilingRecord[]
+  /// v0.36.0 — see BoardConsentInstrument's own doc comment.
+  boardConsentLinks BoardConsentInstrument[]
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
 
@@ -240,8 +461,70 @@ model InstrumentTermVersion {
   createdByUserId String?
   createdByUser   User?      @relation("TermVersionCreatedBy", fields: [createdByUserId], references: [id])
   createdAt     DateTime   @default(now())
+  /// Reverse side of AmortizationScheduleApproval.sourceTermVersionId below — every
+  /// approved amortization table computed FROM this specific version of the terms.
+  amortizationApprovals AmortizationScheduleApproval[]
 
   @@index([instrumentId, effectiveDate])
+}
+
+/// The FULL, end-to-end (grant date through final vest/service date), MONTHLY
+/// amortization table for one instrument — v0.22.0, built directly for the request:
+/// "after a user inputs valid terms for a stock option, the system should compute a
+/// full amortization table (by month) over the service period that can be previewed
+/// by the user. once approved, that amortization table should be saved to the
+/// database and associated with the award and investor, while also aggregated with
+/// all other stock options of the same type."
+///
+/// DELIBERATELY SEPARATE FROM ScheduleEntry (not a replacement for it): ScheduleEntry
+/// + JournalEntry (via the close workflow — see closeInstrument.ts) represent what's
+/// ACTUALLY BEEN RECOGNIZED AND BOOKED as of a real date — never further out than
+/// today, since booking expense for service not yet rendered would misstate the
+/// financials. An AmortizationScheduleApproval is the opposite: the FULL projected
+/// plan for the entire service period, approved once as the record of "this is the
+/// amortization table for this grant" (the same kind of forward-looking schedule a
+/// cap table tool or an equity plan administrator produces at grant time for
+/// planning/disclosure purposes), independent of how much of it has actually been
+/// booked to the GL yet. Associated with the INVESTOR implicitly through
+/// Instrument.stakeholderId — no separate stakeholder FK needed here, the same way
+/// ScheduleEntry doesn't carry one either.
+///
+/// APPEND-ONLY, same pattern as InstrumentTermVersion/Correction: approving a NEW
+/// schedule (e.g. after a modification changes the terms) never edits or deletes a
+/// prior approval — it creates a new one. `sourceTermVersionId` is what lets the UI
+/// detect a STALE approval (one computed from an older term version than the
+/// instrument's current one) and prompt for re-approval, rather than silently
+/// treating outdated projections as current.
+model AmortizationScheduleApproval {
+  id                  String                 @id @default(cuid())
+  instrumentId        String
+  instrument          Instrument             @relation(fields: [instrumentId], references: [id])
+  sourceTermVersionId String
+  sourceTermVersion   InstrumentTermVersion  @relation(fields: [sourceTermVersionId], references: [id])
+  /// Nullable for the same reason InstrumentTermVersion.createdByUserId is — a
+  /// direct-SQL-inserted row (a support fix, a seed) has nothing to set this from.
+  approvedByUserId    String?
+  approvedByUser      User?                  @relation("AmortizationApprovedBy", fields: [approvedByUserId], references: [id])
+  approvedAt          DateTime               @default(now())
+  rows                AmortizationScheduleRow[]
+
+  @@index([instrumentId])
+}
+
+model AmortizationScheduleRow {
+  id            String                       @id @default(cuid())
+  approvalId    String
+  approval      AmortizationScheduleApproval @relation(fields: [approvalId], references: [id])
+  periodStart   DateTime
+  periodEnd     DateTime
+  label         String
+  amount        Decimal                      @db.Decimal(18, 4)
+  /// Cumulative amount recognized as of this row's periodEnd, for THIS instrument
+  /// alone — mirrors ScheduleEntry.endingBalance's meaning.
+  endingBalance Decimal?                     @db.Decimal(18, 4)
+  currency      String                       @default("USD")
+
+  @@index([approvalId, periodEnd])
 }
 
 /// One computed row from the accounting engine (vesting expense, interest expense,
@@ -383,4 +666,229 @@ model DocumentVersion {
   createdAt     DateTime @default(now())
 
   @@unique([documentId, versionNumber])
+}
+
+/// v0.33.0 — stock option tax/compliance reporting (see src/lib/accounting/
+/// optionTaxCompliance.ts). This is a real, append-only EVENT log — "on this date,
+/// this many shares of this option were exercised, at this price, when FMV was this"
+/// — deliberately NOT another InstrumentTermVersion. A term version describes the
+/// GRANT's terms (which can be amended); an exercise is something that HAPPENED, once,
+/// on a specific date, and a stock option is very often exercised in more than one
+/// tranche over its life — modeling that as "the terms as of this date" would force an
+/// awkward new term version for every partial exercise and give no natural place to
+/// record per-exercise FMV (a term version's `terms` JSON describes the award, not a
+/// point-in-time market observation). Every field here maps directly onto a box on IRS
+/// Form 3921 — see `computeForm3921Data` in optionTaxCompliance.ts.
+model OptionExerciseEvent {
+  id             String     @id @default(cuid())
+  instrumentId   String
+  instrument     Instrument @relation(fields: [instrumentId], references: [id], onDelete: RESTRICT, onUpdate: CASCADE)
+  exerciseDate   DateTime
+  quantityExercised            Decimal @db.Decimal(24, 6)
+  exercisePricePerShare        Decimal @db.Decimal(24, 6)
+  /// Fair market value per share ON THE EXERCISE DATE — the figure that determines the
+  /// ISO bargain-element AMT preference (taxElections.ts's
+  /// computeIsoExerciseAmtPreference) and Form 3921 Box 4. NOT the same figure as the
+  /// grant's `grantDateFairValuePerUnit` (an ASC 718 valuation input, as of grant, not
+  /// exercise) — a genuinely different number recorded at a genuinely different time,
+  /// never conflate the two.
+  fairMarketValuePerShareAtExercise Decimal @db.Decimal(24, 6)
+  /// NULLABLE for the same reason InstrumentTermVersion.createdByUserId is — a direct-
+  /// SQL-inserted row has nothing to set this from.
+  recordedByUserId String?
+  recordedByUser   User?    @relation("OptionExerciseRecordedBy", fields: [recordedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+  dispositions     ShareDispositionEvent[]
+  taxFilingRecords TaxFilingRecord[]
+
+  @@index([instrumentId])
+  @@index([exerciseDate])
+}
+
+/// v0.33.0 — a later SALE of shares that came from an ISO exercise (OptionExerciseEvent
+/// above), needed ONLY to determine whether that exercise's disposition was
+/// "qualifying" or "disqualifying" under IRC 422(a)'s holding-period test (more than 2
+/// years after grant AND more than 1 year after exercise) — see
+/// `classifyDisposition` in optionTaxCompliance.ts. Recording this is entirely
+/// optional: an ISO exercise with no disposition event on file is simply treated as
+/// "not yet known to have been sold" (never assumed qualifying OR disqualifying) —
+/// this platform has no way to observe a stakeholder's personal brokerage activity on
+/// its own, so this table only ever reflects what a user explicitly records.
+/// Irrelevant to an NSO exercise (NSOs have no qualifying/disqualifying distinction),
+/// so nothing here validates against the parent exercise's ISO/NSO status — that check
+/// belongs to the report/API layer that surfaces this data, not a schema constraint.
+model ShareDispositionEvent {
+  id               String              @id @default(cuid())
+  exerciseEventId  String
+  exerciseEvent    OptionExerciseEvent @relation(fields: [exerciseEventId], references: [id], onDelete: RESTRICT, onUpdate: CASCADE)
+  dispositionDate  DateTime
+  quantitySold     Decimal @db.Decimal(24, 6)
+  salePricePerShare Decimal @db.Decimal(24, 6)
+  recordedByUserId String?
+  recordedByUser   User?    @relation("ShareDispositionRecordedBy", fields: [recordedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  @@index([exerciseEventId])
+}
+
+/// v0.33.0 — what kind of compliance obligation a TaxFilingRecord row tracks. Kept as
+/// its own enum (not reused from anywhere else) because these are specifically the
+/// filing/reporting OBLIGATIONS this platform currently knows how to detect and
+/// compute data for — see optionTaxCompliance.ts's module doc comment for the exact
+/// rule behind each one, and for what's deliberately NOT in this list yet (Form 3922/
+/// ESPP has no instrument type in this schema at all; state-level filings; actual
+/// payroll withholding-tax calculation, which belongs to a payroll system, not this
+/// platform).
+enum TaxFilingType {
+  /// ISO exercise information return (IRC 6039) — furnished to the employee and filed
+  /// with the IRS for the calendar year of exercise.
+  FORM_3921
+  /// The bargain element on an NSO exercise is ordinary income requiring payroll
+  /// withholding and W-2 reporting — this platform flags the amount and the
+  /// obligation; it does not compute withholding tax itself (see the module doc
+  /// comment on why that's out of scope).
+  W2_NSO_EXERCISE_INCOME
+  /// A disqualifying disposition of ISO shares converts some of the gain to ordinary
+  /// income, which the IRS expects reported (though, unlike an NSO exercise, without a
+  /// company withholding obligation under Section 421(b)/422).
+  W2_ISO_DISQUALIFYING_DISPOSITION
+  /// Not a company filing at all — the EMPLOYEE files this with the IRS within 30 days
+  /// of an early exercise/restricted grant. Tracked here only so a company can confirm
+  /// it happened (or flag that the window closed with no confirmation on file), never
+  /// as something this platform files on anyone's behalf.
+  ELECTION_83B_DEADLINE
+}
+
+enum TaxFilingStatus {
+  PENDING
+  FILED
+  /// Computed and then determined not to actually require filing after all (e.g. an
+  /// ISO exercise that turned out, under the $100k rule, to be entirely
+  /// recharacterized as NSO) — kept as a distinct status, not deleted, so the monthly
+  /// report's history stays a complete, auditable record of every obligation it ever
+  /// evaluated, not just the ones that stuck.
+  NOT_REQUIRED
+}
+
+/// v0.33.0 — one row per compliance obligation the monthly report (optionTaxCompliance.ts's
+/// `buildMonthlyComplianceReport`) has identified, so a user can mark it filed and never
+/// see it nag again. Deliberately NOT recomputed and thrown away on every report run:
+/// the underlying obligation (an exercise happened, a deadline falls due) is
+/// deterministic and could be recomputed from OptionExerciseEvent/ShareDispositionEvent
+/// alone, but WHETHER A HUMAN ACTUALLY FILED IT is state only a person can supply, and
+/// that state has to persist somewhere durable — this table is that somewhere,
+/// reconciled against freshly-computed obligations each time the report runs (a new
+/// obligation gets a new PENDING row; an existing one keeps whatever status was
+/// already recorded).
+model TaxFilingRecord {
+  id                 String            @id @default(cuid())
+  entityId           String
+  entity             Entity            @relation(fields: [entityId], references: [id], onDelete: RESTRICT, onUpdate: CASCADE)
+  filingType         TaxFilingType
+  /// The calendar year the obligation pertains to (the year of exercise/disposition
+  /// for FORM_3921/W2_* — Form 3921 and W-2 are both annual filings even though the
+  /// triggering event has a specific date within that year).
+  taxYear            Int
+  exerciseEventId    String?
+  exerciseEvent      OptionExerciseEvent? @relation(fields: [exerciseEventId], references: [id], onDelete: SetNull, onUpdate: CASCADE)
+  /// ELECTION_83B_DEADLINE traces back to the GRANT itself (a RESTRICTED_STOCK
+  /// instrument's issue/transfer date starts the 30-day clock), not to an
+  /// OptionExerciseEvent — there's no exercise involved in an 83(b) election at all.
+  /// NULL for every other filingType, which all trace back through exerciseEventId
+  /// instead. Same "degrade gracefully" ON DELETE SET NULL as exerciseEventId above,
+  /// for the same reason (User.defaultEntityId's doc comment).
+  instrumentId       String?
+  instrument         Instrument?       @relation(fields: [instrumentId], references: [id], onDelete: SetNull, onUpdate: CASCADE)
+  status             TaxFilingStatus   @default(PENDING)
+  filedDate          DateTime?
+  filedByUserId      String?
+  filedByUser        User?             @relation("TaxFilingRecordFiledBy", fields: [filedByUserId], references: [id])
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([entityId])
+  @@index([exerciseEventId])
+  @@index([instrumentId])
+  // DEDUPE NOTE — this single Prisma @@unique is a BEST-EFFORT APPROXIMATION, not the
+  // real constraint: because SQL treats every NULL as distinct from every other NULL,
+  // a plain multi-column UNIQUE across both exerciseEventId and instrumentId fails to
+  // catch a genuine duplicate whenever the OTHER of the two columns is NULL on both
+  // rows (which is always true here — exactly one of the two is ever set on a given
+  // row). The dedupe guarantee this table actually needs — "one row per
+  // (entity, filingType, taxYear, exerciseEventId) among exercise-tied rows, and
+  // separately one row per (entity, filingType, taxYear, instrumentId) among
+  // instrument-tied rows" — requires two PARTIAL unique indexes (`WHERE
+  // "exerciseEventId" IS NOT NULL` / `WHERE "instrumentId" IS NOT NULL`), which
+  // Prisma's schema language cannot express without preview features unavailable in
+  // this offline sandbox. db/schema.sql and the matching migration implement the two
+  // partial indexes directly in raw SQL — THOSE are the real, verified constraint (see
+  // db/validate.sql's duplicate-rejection tests); this @@unique is kept only so a
+  // real `prisma migrate` run produces at least some protection until someone
+  // upgrades this to the raw-SQL partial-index version via a follow-up migration.
+  @@unique([entityId, filingType, taxYear, exerciseEventId, instrumentId])
+}
+
+// =============================================================================
+// Board approval / consent record-keeping (v0.36.0)
+// =============================================================================
+/// A GOVERNANCE RECORD, DELIBERATELY NOT A WORKFLOW GATE. This does NOT block an
+/// Instrument from being created, closed, or counted on the cap table — nothing in
+/// `dispatch.ts`, `capTable.ts`, or the close workflow reads this table at all. That
+/// is a considered scope decision, not an oversight: this platform's existing
+/// InstrumentStatus enum (ACTIVE/CANCELLED/CONVERTED/EXERCISED/REPAID/EXTINGUISHED)
+/// has no "pending approval" state, and every accounting engine, cap table rollup,
+/// and close-workflow route in this codebase already assumes an ACTIVE instrument is
+/// real and countable. Retrofitting a hard approval gate would mean touching every
+/// one of those well-tested call sites to add a new state they'd all need to filter
+/// out — a much larger, riskier change than what a "quick hit" governance record
+/// needs to actually solve for a small company: a durable, dated record of WHAT the
+/// board approved and WHEN, visible on the instrument/entity pages, that a CPA or
+/// auditor can point to. If a hard pre-issuance approval gate is wanted later, it
+/// belongs as its own, carefully-scoped follow-up — not bolted onto this table after
+/// the fact.
+///
+/// One BoardConsent can cover MULTIPLE instruments at once (the common real-world
+/// case: "the board approves the following option grants: ..."), via the
+/// BoardConsentInstrument join table below — the same many-to-many shape this schema
+/// already uses for User<->Entity (EntityAccess) and StakeholderUser<->Stakeholder
+/// (StakeholderAccess), rather than a single instrumentId column that would force one
+/// row per grant even when the board voted on all of them together in one action.
+model BoardConsent {
+  id              String                   @id @default(cuid())
+  entityId        String
+  entity          Entity                   @relation(fields: [entityId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  title           String
+  description     String
+  consentType     BoardConsentType
+  /// The date the board actually acted (signed the written consent, or held the
+  /// meeting) — NOT the date someone got around to recording it in this platform,
+  /// which is `createdAt` below.
+  decisionDate    DateTime
+  createdByUserId String
+  createdByUser   User                     @relation(fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdAt       DateTime                 @default(now())
+  instruments     BoardConsentInstrument[]
+
+  @@index([entityId])
+}
+
+enum BoardConsentType {
+  WRITTEN_CONSENT
+  BOARD_MEETING
+}
+
+/// Join table linking a BoardConsent to every Instrument it covers — see
+/// BoardConsent's own doc comment for why this is many-to-many rather than a single
+/// column on either side.
+model BoardConsentInstrument {
+  id             String       @id @default(cuid())
+  boardConsentId String
+  boardConsent   BoardConsent @relation(fields: [boardConsentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  instrumentId   String
+  instrument     Instrument   @relation(fields: [instrumentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([boardConsentId, instrumentId])
+  @@index([instrumentId])
 }

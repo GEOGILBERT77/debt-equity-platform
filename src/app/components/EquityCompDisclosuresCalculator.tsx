@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecimalField, SelectField, smallButtonStyle, removeButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 type Mode = "ROLLFORWARD" | "INTRINSIC_VALUE";
 
@@ -183,7 +184,7 @@ export default function EquityCompDisclosuresCalculator() {
         {status === "loading" ? "Computing…" : "Compute"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {result && mode === "ROLLFORWARD" && (
         <>
@@ -214,5 +215,5 @@ export default function EquityCompDisclosuresCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.4rem" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };
 const inputStyle: React.CSSProperties = { width: "100%", padding: "0.3rem" };

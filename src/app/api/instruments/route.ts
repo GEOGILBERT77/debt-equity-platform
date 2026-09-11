@@ -79,6 +79,14 @@ export async function GET(req: NextRequest) {
  * every problem found, instead of either a raw Postgres enum-constraint error or (for
  * `terms`) succeeding at write time and only failing later, deep inside an engine
  * function, the first time someone views this instrument's schedule.
+ *
+ * Creating the instrument does NOT generate or approve an amortization schedule for
+ * it (v0.26.0, reverting the brief v0.25.0 auto-generate behavior per explicit
+ * feedback: "there should be an approve function prior to the grant going live and
+ * being included in reporting"). For STOCK_OPTION/RSU/RESTRICTED_STOCK, the
+ * instrument's own page computes a full-schedule PREVIEW and requires one explicit
+ * "Approve this schedule" action before it feeds any report — see
+ * amortizationSchedule.ts's top-of-file doc comment for the reasoning.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));

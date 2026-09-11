@@ -6,9 +6,16 @@ const VALID_STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR
 
 /**
  * PATCH /api/entities/:id/stakeholders/:stakeholderId { "name"?, "type"?, "email"?,
- * "phone"?, "address"? } — edits a stakeholder's own record (who they are), never their
- * instruments' terms. Requires at least EDITOR on the parent entity, same bar the
- * sibling `POST .../stakeholders` route in `../route.ts` uses for creating one.
+ * "phone"?, "address"?, "taxIdNumber"? } — edits a stakeholder's own record (who they
+ * are), never their instruments' terms. Requires at least EDITOR on the parent entity,
+ * same bar the sibling `POST .../stakeholders` route in `../route.ts` uses for
+ * creating one.
+ *
+ * `taxIdNumber` (v0.33.0) is a government SSN/EIN — see prisma/schema.prisma's
+ * SECURITY doc comment on Stakeholder.taxIdNumber before this is ever populated with
+ * real data outside a sandbox/demo: it's stored as plain text today, which is NOT an
+ * acceptable production posture for an SSN, deliberately left for whoever operates the
+ * real database to add field-level encryption for.
  * Changing `type` doesn't retroactively change how any of this stakeholder's existing
  * instruments are accounted for — `type` here is a descriptive/reporting label
  * (`StakeholderType`), not an input to any engine function; an instrument's actual GAAP
@@ -37,9 +44,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const body = await req.json().catch(() => ({}));
-  const { name, type, email, phone, address } = body ?? {};
+  const { name, type, email, phone, address, taxIdNumber } = body ?? {};
 
-  const data: { name?: string; type?: (typeof VALID_STAKEHOLDER_TYPES)[number]; email?: string | null; phone?: string | null; address?: string | null } = {};
+  const data: {
+    name?: string;
+    type?: (typeof VALID_STAKEHOLDER_TYPES)[number];
+    email?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    taxIdNumber?: string | null;
+  } = {};
   if (name !== undefined) {
     if (typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json({ error: "name must be a non-empty string when provided" }, { status: 400 });
@@ -55,9 +69,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (email !== undefined) data.email = email || null;
   if (phone !== undefined) data.phone = phone || null;
   if (address !== undefined) data.address = address || null;
+  if (taxIdNumber !== undefined) data.taxIdNumber = taxIdNumber ? String(taxIdNumber).trim() : null;
 
   if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "Provide at least one of: name, type, email, phone, address" }, { status: 400 });
+    return NextResponse.json({ error: "Provide at least one of: name, type, email, phone, address, taxIdNumber" }, { status: 400 });
   }
 
   const stakeholder = await db.stakeholder.update({ where: { id: params.stakeholderId }, data });

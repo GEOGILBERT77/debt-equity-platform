@@ -1,5 +1,6 @@
 import EquityCompDisclosuresCalculator from "@/app/components/EquityCompDisclosuresCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * ASC 718-10-50 stock compensation footnote disclosure calculator (v0.20.0) — same
@@ -22,12 +23,12 @@ import Link from "next/link";
  */
 export default function EquityCompDisclosuresPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Equity compensation footnote disclosures</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Two more pieces of the standard ASC 718-10-50 disclosure package: the award activity rollforward by count,
         and intrinsic value realized across a period's exercises. Unrecognized compensation cost and its
         weighted-average remaining period are already covered by the{" "}

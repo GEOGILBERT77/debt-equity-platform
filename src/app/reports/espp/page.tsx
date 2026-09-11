@@ -1,5 +1,6 @@
 import EsppCalculator from "@/app/components/EsppCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * ASC 718-50 employee stock purchase plan (ESPP) calculator (v0.20.0) — same thin
@@ -17,12 +18,12 @@ import Link from "next/link";
  */
 export default function EsppPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>ESPP calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Runs the ASC 718-50-25-1 noncompensatory-vs-compensatory classification test, values a compensatory purchase
         right's grant-date fair value (a closed-form Black-Scholes decomposition for a look-back plan, or a simple
         discounted-forward value for a discount-only plan with no look-back), and produces the purchase-date journal

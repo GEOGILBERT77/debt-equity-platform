@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 import { db } from "@/lib/db";
-import { computeVisibleSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
+import { computeVisibleSchedule, computeFullSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { CloseInstrumentButton } from "@/app/components/CloseInstrumentButton";
 import { CorrectionPanel } from "@/app/components/CorrectionPanel";
+import { ApproveAmortizationScheduleButton } from "@/app/components/ApproveAmortizationScheduleButton";
 import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
 
 /**
@@ -63,7 +65,7 @@ export default async function InstrumentPage({ params }: { params: { id: string 
     scheduleError = err instanceof Error ? err.message : "Failed to compute schedule";
   }
 
-  const [closedRows, journalEntries] = await Promise.all([
+  const [closedRows, journalEntries, latestApproval] = await Promise.all([
     db.scheduleEntry.findMany({
       where: { instrumentId: instrument.id, supersededByCorrectionId: null },
       orderBy: { periodEnd: "asc" },
@@ -73,10 +75,42 @@ export default async function InstrumentPage({ params }: { params: { id: string 
       include: { lines: true },
       orderBy: { date: "asc" },
     }),
+    db.amortizationScheduleApproval.findFirst({
+      where: { instrumentId: instrument.id },
+      orderBy: { approvedAt: "desc" },
+      include: { rows: { orderBy: { periodEnd: "asc" } }, approvedByUser: true },
+    }),
   ]);
 
+  // v0.22.0 — the full, end-to-end MONTHLY amortization table (see computeFullSchedule's
+  // doc comment in dispatch.ts): only meaningful for instrument types with a natural end
+  // date (STOCK_OPTION, RSU, RESTRICTED_STOCK, ...). Silently omitted below for any type
+  // where it throws for THAT specific, expected reason; any other error is shown, since
+  // that would mean something is actually wrong rather than "this type doesn't have one."
+  let fullMonthlySchedule: ReturnType<typeof computeFullSchedule> | null = null;
+  let fullScheduleError: string | null = null;
+  try {
+    fullMonthlySchedule = computeFullSchedule(
+      instrument.type as InstrumentTypeForDispatch,
+      instrument.termVersions.map((v) => ({
+        effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
+        label: v.label,
+        terms: v.terms,
+      }))
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to compute the full amortization table";
+    if (msg.includes("has no natural end date")) {
+      fullMonthlySchedule = null; // expected — this type has no full-schedule concept
+    } else {
+      fullScheduleError = msg;
+    }
+  }
+  const latestTermVersionId = instrument.termVersions[instrument.termVersions.length - 1]?.id;
+  const approvalIsStale = latestApproval != null && latestApproval.sourceTermVersionId !== latestTermVersionId;
+
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
         <Link href={`/captable?entityId=${instrument.entityId}`}>{instrument.entity.name} cap table</Link>
@@ -89,11 +123,20 @@ export default async function InstrumentPage({ params }: { params: { id: string 
       </p>
 
       <CloseInstrumentButton instrumentId={instrument.id} />
+      <p style={{ margin: "0.5rem 0" }}>
+        <Link href={`/instruments/${instrument.id}/modify`} style={buttonLinkStyle}>
+          Modify terms
+        </Link>
+        <span style={{ color: theme.inkMuted, fontSize: "0.85rem", marginLeft: "0.75rem" }}>
+          Amend this instrument (a repricing, an extended vest, etc.) with a preview of the dollar impact
+          before committing.
+        </span>
+      </p>
       <CorrectionPanel instrumentId={instrument.id} />
 
       <h2>Live computed schedule (preview — not yet closed/reported)</h2>
       {scheduleError && (
-        <p style={{ color: "crimson" }}>
+        <p style={{ color: theme.danger.fg }}>
           {scheduleError}
           {schedule.length === 0 && closedRows.length > 0 && " (The closed/reported rows below are unaffected.)"}
         </p>
@@ -119,6 +162,58 @@ export default async function InstrumentPage({ params }: { params: { id: string 
             ))}
           </tbody>
         </table>
+      )}
+
+      {(fullMonthlySchedule || fullScheduleError) && (
+        <>
+          <h2>Full amortization table (monthly, grant through final vest)</h2>
+          <p style={{ color: theme.inkMuted }}>
+            The complete projected schedule for this award's entire service period — not just what's elapsed
+            so far. Approve it once as the record of this grant's accounting treatment; approved schedules
+            across every stock option get aggregated on the{" "}
+            <Link href={`/reports/stock-option-amortization?entityId=${instrument.entityId}`}>
+              stock option amortization report
+            </Link>
+            . This is separate from "Close through today" above: closing books what's actually been earned as
+            of a real date, while this table is the full plan regardless of how much time has passed.
+          </p>
+          {fullScheduleError && <p style={{ color: theme.danger.fg }}>{fullScheduleError}</p>}
+          {fullMonthlySchedule && (
+            <>
+              {latestApproval ? (
+                <p style={{ color: approvalIsStale ? theme.warning.fg : theme.success.fg }}>
+                  Approved {latestApproval.approvedAt.toISOString().slice(0, 10)}
+                  {latestApproval.approvedByUser && ` by ${latestApproval.approvedByUser.email}`}.
+                  {approvalIsStale &&
+                    " This instrument has been modified since — the approved table below no longer matches the current terms. Re-approve to update it."}
+                </p>
+              ) : (
+                <p style={{ color: theme.inkMuted }}>Not yet approved — the table below is a live preview only, and is excluded from every report until approved.</p>
+              )}
+              <ApproveAmortizationScheduleButton instrumentId={instrument.id} />
+              <div style={{ maxHeight: 400, overflowY: "auto", border: `1px solid ${theme.border}` }}>
+                <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th style={cellStyle}>Month</th>
+                      <th style={cellStyle}>Amount</th>
+                      <th style={cellStyle}>Ending balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fullMonthlySchedule.map((row, i) => (
+                      <tr key={i}>
+                        <td style={cellStyle}>{row.label}</td>
+                        <td style={cellStyle}>{row.amount.toFixed(2)}</td>
+                        <td style={cellStyle}>{row.endingBalance?.toFixed(2) ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </>
       )}
 
       <h2>Closed &amp; reported (persisted ScheduleEntry rows)</h2>
@@ -198,4 +293,14 @@ export default async function InstrumentPage({ params }: { params: { id: string 
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.5rem", textAlign: "left" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
+const buttonLinkStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "0.35rem 0.7rem",
+  border: `1px solid ${theme.ink}`,
+  borderRadius: 4,
+  background: theme.surfaceAlt,
+  textDecoration: "none",
+  color: "inherit",
+  fontSize: "0.9rem",
+};

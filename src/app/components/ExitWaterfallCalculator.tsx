@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecimalField, smallButtonStyle, removeButtonStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 interface ClassRow {
   id: string;
@@ -142,7 +143,7 @@ export default function ExitWaterfallCalculator() {
         {status === "loading" ? "Computing…" : "Compute waterfall"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {results && (
         <>
@@ -176,7 +177,7 @@ export default function ExitWaterfallCalculator() {
           <p>
             Total distributed: {results.totalDistributed}
             {Number(results.undistributed) !== 0 && (
-              <span style={{ color: "#92400e" }}> — undistributed (clawed back by a participation cap, not reallocated): {results.undistributed}</span>
+              <span style={{ color: theme.warning.fg }}> — undistributed (clawed back by a participation cap, not reallocated): {results.undistributed}</span>
             )}
           </p>
         </>
@@ -185,5 +186,5 @@ export default function ExitWaterfallCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.4rem" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };
 const inputStyle: React.CSSProperties = { width: "100%", padding: "0.25rem", fontSize: "0.85rem" };

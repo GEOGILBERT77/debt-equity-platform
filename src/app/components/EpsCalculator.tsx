@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecimalField, SelectField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 type Mode = "BASIC" | "DILUTED";
 
@@ -94,7 +95,7 @@ export default function EpsCalculator() {
         {status === "loading" ? "Computing…" : "Compute"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {result && (
         <>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecimalField, DateField, SelectField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 type Mode = "CASH_EXERCISE" | "NET_SHARE_SETTLEMENT" | "TAX_WITHHOLDING_REMITTANCE";
 
@@ -152,14 +153,14 @@ export default function SettlementCalculator() {
         {status === "loading" ? "Computing…" : "Compute journal entry"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {result && (
         <>
           <h2>Journal entry</h2>
           <p>
             <strong>{result.date}</strong> — {result.description}
-            {result.ascReference && <span style={{ color: "#666" }}> ({result.ascReference})</span>}
+            {result.ascReference && <span style={{ color: theme.inkMuted }}> ({result.ascReference})</span>}
           </p>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
@@ -185,4 +186,4 @@ export default function SettlementCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.4rem" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };

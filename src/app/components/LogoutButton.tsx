@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { theme } from "@/lib/theme";
 
 export function LogoutButton() {
   const router = useRouter();
@@ -20,9 +21,9 @@ export function LogoutButton() {
       disabled={loading}
       style={{
         padding: "0.3rem 0.7rem",
-        border: "1px solid #999",
+        border: `1px solid ${theme.border}`,
         borderRadius: 4,
-        background: "#fff",
+        background: theme.surface,
         cursor: "pointer",
         fontSize: "0.85rem",
       }}

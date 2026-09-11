@@ -1,5 +1,6 @@
 import ExitWaterfallCalculator from "@/app/components/ExitWaterfallCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * Exit / liquidation waterfall calculator (v0.19.0) — thin server wrapper around the
@@ -14,16 +15,18 @@ import Link from "next/link";
  */
 export default function ExitWaterfallPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
-        <Link href="/">&larr; All entities</Link>
+        <Link href="/">&larr; All entities</Link> {" · "}
+        <Link href="/reports/cap-table-waterfall">Cap table waterfall report (real stored terms)</Link>
       </p>
       <h1>Exit / liquidation waterfall calculator</h1>
-      <p style={{ color: "#555" }}>
-        A standalone calculator — enter the whole cap table stack by hand below. This is NOT wired to any entity's
-        stored preferred-stock terms (that data model doesn't capture liquidation preference, seniority, or
-        participation yet — see the README). Useful for modeling a hypothetical exit today; not yet a one-click
-        report on a real client's actual stack.
+      <p style={{ color: theme.inkMuted }}>
+        A standalone calculator — enter the whole cap table stack by hand below. As of v0.31.0, preferred stock CAN
+        store liquidation preference, seniority, and participation terms (see the new report linked above, which
+        reads them and runs the waterfall on a real entity's actual stack) — this page remains useful for modeling a
+        hypothetical stack that isn't in the database at all, or for a quick what-if with numbers you don't want to
+        change on a real instrument.
       </p>
       <ExitWaterfallCalculator />
     </main>

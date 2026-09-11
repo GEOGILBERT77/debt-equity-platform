@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { theme } from "@/lib/theme";
 
 /**
  * The only page src/middleware.ts lets through without a valid session — see that
@@ -44,9 +45,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 400, margin: "0 auto" }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 400, margin: "0 auto" }}>
       <h1>Debt &amp; Equity Platform</h1>
-      <p style={{ color: "#555" }}>Sign in to view or manage your entities.</p>
+      <p style={{ color: theme.inkMuted }}>Sign in to view or manage your entities.</p>
       <form onSubmit={handleSubmit}>
         <label style={labelStyle}>
           Email
@@ -72,9 +73,9 @@ export default function LoginPage() {
         <button type="submit" disabled={status === "loading"} style={buttonStyle}>
           {status === "loading" ? "Signing in…" : "Sign in"}
         </button>
-        {message && <p style={{ color: "crimson", marginTop: "0.5rem" }}>{message}</p>}
+        {message && <p style={{ color: theme.danger.fg, marginTop: "0.5rem" }}>{message}</p>}
       </form>
-      <p style={{ color: "#888", fontSize: "0.85rem", marginTop: "1.5rem" }}>
+      <p style={{ color: theme.inkMuted, fontSize: "0.85rem", marginTop: "1.5rem" }}>
         No account yet? An existing user with access to your entity needs to create one for
         you — see the README's "Real authentication and multi-tenancy" section. There's no
         public self-service sign-up on a financial app.
@@ -85,9 +86,9 @@ export default function LoginPage() {
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
-  border: "1px solid #333",
+  border: `1px solid ${theme.ink}`,
   borderRadius: 4,
-  background: "#f5f5f5",
+  background: theme.surfaceAlt,
   cursor: "pointer",
 };
 const labelStyle: React.CSSProperties = { display: "block", margin: "0.75rem 0", fontSize: "0.9rem" };

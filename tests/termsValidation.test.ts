@@ -21,6 +21,9 @@ test("validateInstrumentTerms: STOCK_OPTION/RSU accepts a well-formed ServiceCon
     grantDate: "2025-01-01",
     quantity: "6000",
     grantDateFairValuePerUnit: "2",
+    // Required for STOCK_OPTION (not RSU, which ignores it if present) — see
+    // ServiceConditionGrant.strikePrice's doc comment in vesting.ts.
+    strikePrice: "5",
     attributionMethod: "straight-line",
     tranches: [
       { id: "t1", vestDate: "2026-01-01", quantity: "3000" },
@@ -31,11 +34,32 @@ test("validateInstrumentTerms: STOCK_OPTION/RSU accepts a well-formed ServiceCon
   assert.doesNotThrow(() => validateInstrumentTerms("RSU", grant));
 });
 
+test("validateInstrumentTerms: STOCK_OPTION rejects a missing strikePrice", () => {
+  const { strikePrice, ...noStrike } = {
+    grantDate: "2025-01-01",
+    quantity: "6000",
+    grantDateFairValuePerUnit: "2",
+    strikePrice: "5",
+    attributionMethod: "straight-line",
+    tranches: [{ id: "t1", vestDate: "2026-01-01", quantity: "6000" }],
+  };
+  try {
+    validateInstrumentTerms("STOCK_OPTION", noStrike);
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.deepEqual(issuePaths(err), ["strikePrice"]);
+  }
+  // RSU has no strike price at all — the exact same payload (still missing
+  // strikePrice) is valid for RSU.
+  assert.doesNotThrow(() => validateInstrumentTerms("RSU", noStrike));
+});
+
 test("validateInstrumentTerms: STOCK_OPTION rejects a missing quantity, bad date, invalid attributionMethod, and empty tranches all at once", () => {
   const bad = {
     grantDate: "not-a-date",
     // quantity missing entirely
     grantDateFairValuePerUnit: "2",
+    strikePrice: "5", // present, so it isn't a 5th reported issue here
     attributionMethod: "immediate", // not a valid value
     tranches: [],
   };
@@ -59,6 +83,7 @@ test("validateInstrumentTerms: STOCK_OPTION rejects a malformed tranche with a p
     grantDate: "2025-01-01",
     quantity: "12000",
     grantDateFairValuePerUnit: "2",
+    strikePrice: "5",
     attributionMethod: "straight-line",
     tranches: [
       { id: "t1", vestDate: "2026-01-01", quantity: "3000" },
@@ -79,6 +104,7 @@ test("validateInstrumentTerms: STOCK_OPTION rejects tranche quantities that don'
     grantDate: "2025-01-01",
     quantity: "12000", // tranches below only sum to 9000
     grantDateFairValuePerUnit: "2",
+    strikePrice: "5",
     attributionMethod: "straight-line",
     tranches: [
       { id: "t1", vestDate: "2026-01-01", quantity: "3000" },
@@ -101,6 +127,7 @@ test("validateInstrumentTerms: STOCK_OPTION rejects a tranche that vests on or b
     grantDate: "2025-01-01",
     quantity: "6000",
     grantDateFairValuePerUnit: "2",
+    strikePrice: "5",
     attributionMethod: "straight-line",
     tranches: [
       { id: "t1", vestDate: "2025-01-01", quantity: "3000" }, // same day as grant — invalid
@@ -120,6 +147,7 @@ test("validateInstrumentTerms: a grant whose tranches are individually well-form
     grantDate: "2025-01-01",
     quantity: "9000",
     grantDateFairValuePerUnit: "2",
+    strikePrice: "5",
     attributionMethod: "straight-line",
     tranches: [
       { id: "t1", vestDate: "2026-01-01", quantity: "3000" },
@@ -128,6 +156,34 @@ test("validateInstrumentTerms: a grant whose tranches are individually well-form
     ],
   };
   assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", grant));
+});
+
+test("validateInstrumentTerms: servicePeriodEndDate is optional, but when present must be after grantDate and on/after the last vesting tranche", () => {
+  const base = {
+    grantDate: "2026-01-01",
+    quantity: "6000",
+    grantDateFairValuePerUnit: "2",
+    strikePrice: "5",
+    attributionMethod: "straight-line" as const,
+    tranches: [{ id: "t1", vestDate: "2030-01-01", quantity: "6000" }],
+  };
+  assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", base));
+  assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", { ...base, servicePeriodEndDate: "2030-01-01" }));
+  assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", { ...base, servicePeriodEndDate: "2032-01-01" }));
+
+  try {
+    validateInstrumentTerms("STOCK_OPTION", { ...base, servicePeriodEndDate: "2028-01-01" }); // before last vest
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.deepEqual(issuePaths(err), ["servicePeriodEndDate"]);
+  }
+
+  try {
+    validateInstrumentTerms("STOCK_OPTION", { ...base, servicePeriodEndDate: "not-a-date" });
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.deepEqual(issuePaths(err), ["servicePeriodEndDate"]);
+  }
 });
 
 test("validateInstrumentTerms: TERM_LOAN accepts a well-formed TermDebtInputs and rejects a non-numeric faceValue plus a malformed cash flow", () => {
@@ -574,6 +630,91 @@ test("validateInstrumentTerms: SAR rejects an invalid settlementType value outri
   } catch (err) {
     assert.deepEqual(issuePaths(err), ["settlementType"]);
   }
+});
+
+test("validateInstrumentTerms: STOCK_OPTION conditionType 'market' accepts a well-formed MarketConditionGrant and rejects a missing derivedServiceEndDate", () => {
+  const good = {
+    conditionType: "market",
+    grantDate: "2026-01-01",
+    quantity: "10000",
+    grantDateFairValuePerUnit: "3.50",
+    strikePrice: "10.00",
+    derivedServiceEndDate: "2032-01-01",
+  };
+  assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", good));
+
+  const { derivedServiceEndDate, ...missing } = good;
+  try {
+    validateInstrumentTerms("STOCK_OPTION", missing);
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.deepEqual(issuePaths(err), ["derivedServiceEndDate"]);
+  }
+
+  try {
+    validateInstrumentTerms("STOCK_OPTION", { ...good, derivedServiceEndDate: "2025-01-01" }); // before grantDate
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.deepEqual(issuePaths(err), ["derivedServiceEndDate"]);
+  }
+});
+
+test("validateInstrumentTerms: STOCK_OPTION conditionType 'performance' accepts a well-formed grant (empty or populated probabilityAssessments) and rejects out-of-order assessments", () => {
+  const good = {
+    conditionType: "performance",
+    grantDate: "2026-01-01",
+    quantity: "10000",
+    grantDateFairValuePerUnit: "3.50",
+    strikePrice: "10.00",
+    requisiteServiceEndDate: "2032-01-01",
+    probabilityAssessments: [] as { date: string; probable: boolean }[],
+  };
+  assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", good)); // empty is fine at grant time
+
+  assert.doesNotThrow(() =>
+    validateInstrumentTerms("STOCK_OPTION", {
+      ...good,
+      probabilityAssessments: [
+        { date: "2026-02-01", probable: true },
+        { date: "2026-03-01", probable: true },
+      ],
+    })
+  );
+
+  try {
+    validateInstrumentTerms("STOCK_OPTION", {
+      ...good,
+      probabilityAssessments: [
+        { date: "2026-03-01", probable: true },
+        { date: "2026-02-01", probable: true }, // out of order
+      ],
+    });
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.deepEqual(issuePaths(err), ["probabilityAssessments"]);
+  }
+});
+
+test("validateInstrumentTerms: STOCK_OPTION rejects an unrecognized conditionType value", () => {
+  try {
+    validateInstrumentTerms("STOCK_OPTION", { conditionType: "subjective", grantDate: "2026-01-01" });
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.deepEqual(issuePaths(err), ["conditionType"]);
+  }
+});
+
+test("validateInstrumentTerms: STOCK_OPTION with no conditionType (or conditionType: 'service') validates against the ordinary ServiceConditionGrant shape, unchanged from before this discriminator existed", () => {
+  const grant = {
+    grantDate: "2026-01-01",
+    quantity: "10000",
+    grantDateFairValuePerUnit: "3.50",
+    strikePrice: "10.00",
+    attributionMethod: "straight-line",
+    tranches: [{ id: "t1", vestDate: "2032-01-01", quantity: "10000" }],
+  };
+  assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", grant));
+  assert.doesNotThrow(() => validateInstrumentTerms("STOCK_OPTION", { ...grant, conditionType: "service" }));
 });
 
 test("validateInstrumentTerms: rejects a non-object terms payload outright for every type", () => {

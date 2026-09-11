@@ -1,5 +1,6 @@
 import NonemployeeAwardCalculator from "@/app/components/NonemployeeAwardCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * ASC 718-10 nonemployee share-based payment award calculator (v0.20.0) — same thin
@@ -19,12 +20,12 @@ import Link from "next/link";
  */
 export default function NonemployeeAwardsPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Nonemployee award calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Applies ASC 718-10-25-2C's requisite-service-period presumption (an award with no explicit condition on the
         nonemployee's future performance is fully vested, and its whole grant-date fair value recognized, on the
         grant date itself), picks the correct recognition account by counterparty (an ordinary compensation-style

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { theme } from "@/lib/theme";
 
 /**
  * The first step of the data-entry flow this front end was missing entirely until
@@ -42,7 +43,7 @@ export default function NewEntityPage() {
   }
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 500 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 500 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
@@ -65,7 +66,7 @@ export default function NewEntityPage() {
         <button type="submit" disabled={status === "loading"} style={buttonStyle}>
           {status === "loading" ? "Creating…" : "Create entity"}
         </button>
-        {message && <p style={{ color: "crimson", marginTop: "0.5rem" }}>{message}</p>}
+        {message && <p style={{ color: theme.danger.fg, marginTop: "0.5rem" }}>{message}</p>}
       </form>
     </main>
   );
@@ -73,9 +74,9 @@ export default function NewEntityPage() {
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
-  border: "1px solid #333",
+  border: `1px solid ${theme.ink}`,
   borderRadius: 4,
-  background: "#f5f5f5",
+  background: theme.surfaceAlt,
   cursor: "pointer",
 };
 const labelStyle: React.CSSProperties = { display: "block", margin: "0.75rem 0", fontSize: "0.9rem" };

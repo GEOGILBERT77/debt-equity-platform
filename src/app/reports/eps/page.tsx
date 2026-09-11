@@ -1,5 +1,6 @@
 import EpsCalculator from "@/app/components/EpsCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * ASC 260-10-45 two-class method EPS calculator (v0.20.0) — same thin
@@ -18,12 +19,12 @@ import Link from "next/link";
  */
 export default function EpsPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Two-class method EPS calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Allocates net income (or loss) between common stock and one participating convertible preferred class per the
         ASC 260-10-45 two-class method, then — in DILUTED mode — compares that result against the if-converted
         method and reports whichever is more dilutive. A standalone calculator: enter the period's numbers by hand

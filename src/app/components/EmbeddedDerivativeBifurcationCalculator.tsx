@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BoolField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 /** Client-side calculator UI for POST /api/reports/embedded-derivative-bifurcation —
  * see embeddedDerivativeBifurcation.ts for the actual ASC 815-15-25 classification
@@ -48,7 +49,7 @@ export default function EmbeddedDerivativeBifurcationCalculator() {
     }
   }
 
-  const outcomeColor = result?.outcome === "REQUIRED" ? "crimson" : result?.outcome === "REVIEW" ? "#92400e" : "#166534";
+  const outcomeColor = result?.outcome === "REQUIRED" ? theme.danger.fg : result?.outcome === "REVIEW" ? theme.warning.fg : theme.success.fg;
 
   return (
     <div>
@@ -80,14 +81,14 @@ export default function EmbeddedDerivativeBifurcationCalculator() {
         {status === "loading" ? "Computing…" : "Compute"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {result && (
         <>
           <h2 style={{ color: outcomeColor }}>{result.outcome === "NOT_REQUIRED" ? "Bifurcation NOT required" : result.outcome === "REQUIRED" ? "Bifurcation REQUIRED" : "Needs review"}</h2>
           <p>{result.reason}</p>
           {result.outcome === "REQUIRED" && (
-            <p style={{ color: "#92400e" }}>
+            <p style={{ color: theme.warning.fg }}>
               This calculator does not value the resulting derivative — that needs a lattice or Monte Carlo model
               capturing the feature's full contingent-payment structure, which this codebase does not build. Consult
               a valuation specialist.

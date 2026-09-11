@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DecimalField, DateField, TextField, BoolField, SelectField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 type Mode = "CLASSIFY" | "LIABILITY_ISSUANCE_ENTRY" | "EQUITY_ISSUANCE_ENTRY" | "CONVERSION_ENTRY";
 
@@ -153,7 +154,7 @@ export default function SafeCalculator() {
         {status === "loading" ? "Computing…" : "Compute"}
       </button>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
 
       {classification && (
         <h2>
@@ -166,7 +167,7 @@ export default function SafeCalculator() {
           <h2>Journal entry</h2>
           <p>
             <strong>{entryResult.date}</strong> — {entryResult.description}
-            {entryResult.ascReference && <span style={{ color: "#666" }}> ({entryResult.ascReference})</span>}
+            {entryResult.ascReference && <span style={{ color: theme.inkMuted }}> ({entryResult.ascReference})</span>}
           </p>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
@@ -196,4 +197,4 @@ export default function SafeCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: "1px solid #ccc", padding: "0.4rem" };
+const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };

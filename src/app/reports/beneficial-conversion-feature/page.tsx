@@ -1,5 +1,6 @@
 import BcfCalculator from "@/app/components/BcfCalculator";
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 /**
  * ASC 470-20-30 beneficial conversion feature calculator (v0.20.0) — same thin
@@ -16,12 +17,12 @@ import Link from "next/link";
  */
 export default function BcfPage() {
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link>
       </p>
       <h1>Beneficial conversion feature calculator</h1>
-      <p style={{ color: "#555" }}>
+      <p style={{ color: theme.inkMuted }}>
         Computes the intrinsic value that must be split out at issuance when a convertible note or convertible
         preferred stock's conversion price is below the commitment-date fair value of the underlying stock (ASC
         470-20-30), then produces the resulting journal entry — additional debt discount for a convertible note, or

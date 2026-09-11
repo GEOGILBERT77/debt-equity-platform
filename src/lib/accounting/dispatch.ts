@@ -1,7 +1,15 @@
 import { ScheduleRow, JournalEntry, DecimalValue, ISODate } from "./types.js";
-import { Period, buildAnnualPeriods } from "./dateMath.js";
+import { Period, buildAnnualPeriods, buildCalendarMonthlyPeriods } from "./dateMath.js";
 import { InstrumentTimeline, recomputeSchedule } from "./modificationEngine.js";
-import { buildServiceConditionSchedule, ServiceConditionGrant, Tranche } from "./vesting.js";
+import {
+  buildServiceConditionSchedule,
+  buildPerformanceConditionSchedule,
+  buildMarketConditionSchedule,
+  ServiceConditionGrant,
+  PerformanceConditionGrant,
+  MarketConditionGrant,
+  Tranche,
+} from "./vesting.js";
 import { buildCashSettledSarSchedule, buildStockSettledSarSchedule, CashSettledSarGrant } from "./stockAppreciationRights.js";
 import {
   classifyPreferredStock,
@@ -171,6 +179,48 @@ export interface PreferredStockInstrumentTerms {
    * existing "unsupported, no conversion ratio modeled" flag when this is absent on a
    * mezzanine/permanent-equity preferred, same behavior as before this field existed. */
   conversionTerms?: PreferredConversionTerms;
+  /** v0.31.0 — liquidation/exit-waterfall terms: seniority, preference multiple, and
+   * participation. Optional and NOT used by this dispatcher's own schedule/journal-
+   * entry functions (an exit waterfall is a point-in-time hypothetical, not a
+   * periodic accounting schedule) — read only by capTableWaterfall.ts's adapter into
+   * exitWaterfall.ts's `buildExitWaterfall`. Omit entirely for preferred stock with no
+   * liquidation preference recorded yet (or genuinely none) — the waterfall report
+   * flags such an instrument as excluded rather than guessing at its priority. */
+  liquidationPreference?: LiquidationPreferenceTerms;
+}
+
+/** Real-world preferred-stock termsheet language, kept close to how it's actually
+ * written ("1x non-participating," "2x participating with a 3x cap") rather than
+ * pre-collapsed into a single dollar-per-share figure — so this stays legible and
+ * re-usable if `originalIssuePricePerShare` or the multiple ever needs to be shown on
+ * its own (a disclosure footnote, a termsheet summary), and so it doesn't silently go
+ * stale if `conversionTerms.conversionRatio` changes (a down-round anti-dilution
+ * adjustment) without this being touched. `capTableWaterfall.ts`'s adapter is what
+ * turns this, PLUS the instrument's own quantity and `conversionTerms`, into the
+ * as-converted-per-share dollar figures `exitWaterfall.ts`'s `WaterfallClassInput`
+ * actually needs — see that file's doc comment for the derivation. */
+export interface LiquidationPreferenceTerms {
+  /** Purely cosmetic grouping/display label (e.g. "Series A") — capTableWaterfall.ts
+   * pools every PREFERRED_STOCK instrument that shares the same seriesName into one
+   * waterfall class (summing quantities) instead of showing one row per investor.
+   * Omit for a one-off preferred issuance with no other holders in the same series;
+   * the instrument's own id is used as the class identity/label instead. */
+  seriesName?: string;
+  /** Lower = paid first in a liquidation/exit waterfall. Common stock needs no entry
+   * here at all (see capTableWaterfall.ts — it's synthesized as one pooled class). */
+  seniorityRank: number;
+  /** Original issue price per PREFERRED share (pre-conversion) — the base the
+   * multiple below applies to, per the instrument's actual purchase agreement. */
+  originalIssuePricePerShare: DecimalValue;
+  /** e.g. 1 for "1x," 1.5, 2 — the stated liquidation preference multiple. */
+  liquidationPreferenceMultiple: DecimalValue;
+  /** Participating preferred takes its preference AND shares pro-rata in the
+   * residual — see exitWaterfall.ts's methodology note #3. */
+  participating: boolean;
+  /** Total return per ORIGINAL preferred share (preference + participation),
+   * inclusive, as a multiple of `originalIssuePricePerShare` (e.g. 3 for "capped at
+   * 3x"). Ignored for a non-participating class. Undefined = uncapped. */
+  participationCapMultiple?: DecimalValue;
 }
 
 /** How many PREFERRED shares are outstanding, and how many COMMON shares each one
@@ -210,12 +260,100 @@ export interface RestrictedStockInstrumentTerms {
   purchasePricePerShare: DecimalValue;
   tranches: Tranche[];
   attributionMethod: "straight-line" | "graded";
+  /** Same field, same meaning, as ServiceConditionGrant.servicePeriodEndDate in
+   * vesting.ts — this type's expense half IS buildServiceConditionSchedule, so it
+   * needs the identical override for when the requisite service period outruns the
+   * vesting schedule. */
+  servicePeriodEndDate?: ISODate;
 }
 
 // (Tranche is imported from vesting.js above rather than redefined here — the
 // RESTRICTED_STOCK terms shape above intentionally reuses ServiceConditionGrant's
 // tranches field type so the two schedules the RESTRICTED_STOCK case below builds from
 // it can never disagree about tranche shape.)
+
+/**
+ * STOCK_OPTION's `terms` shape is a discriminator on `conditionType` — vesting.ts's
+ * module doc comment explains why service/performance/market conditions need
+ * "materially different treatment," and until now only the service-condition branch
+ * was ever wired up here (RSU/RESTRICTED_STOCK/a stock-settled SAR's equityTerms all
+ * stay plain ServiceConditionGrant — this discriminator is STOCK_OPTION-only, since
+ * that's the only type this was actually asked for). `conditionType` is OPTIONAL and
+ * defaults to "service" when absent, so every STOCK_OPTION grant recorded before this
+ * discriminator existed keeps working unchanged — it was always a service-condition
+ * award as far as this platform was concerned, just without a name for it.
+ *
+ * PERFORMANCE-CONDITION SCOPE NOTE: `buildPerformanceConditionSchedule` needs a
+ * `probableAsOf: boolean[]`, one entry per period — a genuinely ongoing accounting
+ * judgment (see vesting.ts's doc comment: "the one genuinely stateful engine of the
+ * three"), not a fact fixed at grant time. `probabilityAssessments` below follows the
+ * exact same "one entry per period, matched positionally, chronological" convention
+ * WARRANT's remeasurement.observations and a cash-settled SAR's observations already
+ * use (see termsValidation.ts) — populated with an initial best estimate at grant
+ * time (this platform has no support yet for RECORDING a probability reassessment
+ * that changes over an award's life other than by modifying this array outright via
+ * "Modify terms," the same blunt mechanism every other terms field uses). A grant
+ * assessed "probable" for its entire requisite service period from day one — the
+ * ordinary case for an award granted on the expectation performance will be met —
+ * produces a plain straight-line schedule, identical in shape to a service-condition
+ * award; the cumulative-catch-up/reversal machinery only shows up if a later
+ * modification changes some of these booleans to false.
+ */
+/** v0.33.0 — ISO-vs-NSO designation, added on all three condition-type variants below
+ * for the tax/compliance reporting feature (optionTaxCompliance.ts): whether this
+ * grant is intended as an Incentive Stock Option under IRC 422, as opposed to an
+ * ordinary Non-qualified Stock Option. Undefined/false = NSO, the correct default for
+ * every grant recorded before this field existed (they were never previously
+ * classified, and NSO — not ISO — is the safe assumption: ISO status requires
+ * affirmative plan/grant-agreement language, so a silent default of "ISO" would be the
+ * one that's actually risky to get wrong).
+ *
+ * THIS FIELD IS THE COMPANY'S GRANT-LEVEL DESIGNATION, NOT THE FINAL TAX ANSWER: a
+ * grant designated ISO here can still have some or all of a given year's newly-
+ * exercisable shares automatically recharacterized as NSO under the IRC 422(d) "$100k
+ * rule" (see taxElections.ts's `applyIso100kLimit`, and
+ * optionTaxCompliance.ts's `classifyExerciseForFiling`, which applies that rule to a
+ * specific recorded exercise before deciding whether it needs a Form 3921 at all).
+ * Nothing in this file or termsValidation.ts applies the $100k rule — that requires
+ * aggregating every ISO grant a stakeholder holds across an entity, which is exactly
+ * the kind of cross-instrument computation this per-instrument terms validator can't
+ * see and shouldn't try to.
+ *
+ * A grant with `isIncentiveStockOption: true` is required to also carry a
+ * `strikePrice` (see termsValidation.ts) — every other STOCK_OPTION variant already
+ * requires it for the service-condition case; this makes it required for ALL THREE
+ * variants once ISO is claimed, since Form 3921's exercise-price box has no room for
+ * "unknown," and an ISO's exercise price must legally be at least grant-date FMV
+ * (IRC 422(b)(4)) — a check this validator does NOT perform, since grant-date FMV
+ * here is `grantDateFairValuePerUnit`, an ASC 718 valuation input that may differ from
+ * the tax-purposes FMV a 409A appraisal would set; reconciling those two is a real gap
+ * flagged in REPORTS-CONVERSION-PLAN.md, not silently assumed equal.
+ */
+export interface StockOptionServiceConditionTerms extends ServiceConditionGrant {
+  conditionType?: "service";
+  isIncentiveStockOption?: boolean;
+}
+export interface StockOptionPerformanceConditionTerms {
+  conditionType: "performance";
+  grantDate: ISODate;
+  quantity: DecimalValue;
+  grantDateFairValuePerUnit: DecimalValue;
+  requisiteServiceEndDate: ISODate;
+  /** Disclosure only — see ServiceConditionGrant.strikePrice's doc comment. */
+  strikePrice?: DecimalValue;
+  probabilityAssessments: { date: ISODate; probable: boolean }[];
+  isIncentiveStockOption?: boolean;
+}
+export interface StockOptionMarketConditionTerms extends MarketConditionGrant {
+  conditionType: "market";
+  /** Disclosure only — see ServiceConditionGrant.strikePrice's doc comment. */
+  strikePrice?: DecimalValue;
+  isIncentiveStockOption?: boolean;
+}
+export type StockOptionInstrumentTerms =
+  | StockOptionServiceConditionTerms
+  | StockOptionPerformanceConditionTerms
+  | StockOptionMarketConditionTerms;
 
 /** Returns the engine function that knows how to build a schedule for this instrument
  * type — pulled out as its own export so correctionService.ts's `previewCorrection`
@@ -224,6 +362,20 @@ export interface RestrictedStockInstrumentTerms {
 export function getScheduleBuilder(type: InstrumentTypeForDispatch): (terms: unknown, periods: Period[]) => ScheduleRow[] {
   switch (type) {
     case "STOCK_OPTION":
+      return (terms, periods) => {
+        const t = terms as StockOptionInstrumentTerms;
+        if (t.conditionType === "performance") {
+          // probabilityAssessments is stored ONE ENTRY PER PERIOD (see
+          // StockOptionPerformanceConditionTerms's doc comment) — matched
+          // positionally, same convention as WARRANT/cash-settled SAR observations.
+          const probableAsOf = periods.map((_, i) => t.probabilityAssessments[i]?.probable ?? false);
+          return buildPerformanceConditionSchedule(t as PerformanceConditionGrant, probableAsOf, periods);
+        }
+        if (t.conditionType === "market") {
+          return buildMarketConditionSchedule(t as MarketConditionGrant, periods);
+        }
+        return buildServiceConditionSchedule(t as ServiceConditionGrant, periods);
+      };
     case "RSU":
       return (terms, periods) => buildServiceConditionSchedule(terms as ServiceConditionGrant, periods);
     case "TERM_LOAN":
@@ -409,11 +561,25 @@ export function computeScheduleForInstrument(
  */
 export function naturalScheduleEndDate(type: InstrumentTypeForDispatch, terms: unknown): ISODate | null {
   switch (type) {
-    case "STOCK_OPTION":
+    case "STOCK_OPTION": {
+      const t = terms as StockOptionInstrumentTerms;
+      if (t.conditionType === "performance") return t.requisiteServiceEndDate;
+      if (t.conditionType === "market") return t.derivedServiceEndDate;
+      const grant = t as ServiceConditionGrant;
+      if (!grant.tranches || grant.tranches.length === 0) return null;
+      const lastVest = grant.tranches.reduce((max, tr) => (tr.vestDate > max ? tr.vestDate : max), grant.tranches[0].vestDate);
+      // See ServiceConditionGrant.servicePeriodEndDate's doc comment in vesting.ts —
+      // when the requisite service period outruns the vesting schedule, the monthly
+      // periods array (and therefore this "natural end") has to span the LONGER of
+      // the two, or buildServiceConditionSchedule's straight-line branch would have no
+      // periods left to spread the tail of the expense into.
+      return grant.servicePeriodEndDate && grant.servicePeriodEndDate > lastVest ? grant.servicePeriodEndDate : lastVest;
+    }
     case "RSU": {
       const grant = terms as ServiceConditionGrant;
       if (!grant.tranches || grant.tranches.length === 0) return null;
-      return grant.tranches.reduce((max, t) => (t.vestDate > max ? t.vestDate : max), grant.tranches[0].vestDate);
+      const lastVest = grant.tranches.reduce((max, t) => (t.vestDate > max ? t.vestDate : max), grant.tranches[0].vestDate);
+      return grant.servicePeriodEndDate && grant.servicePeriodEndDate > lastVest ? grant.servicePeriodEndDate : lastVest;
     }
     case "REVOLVER": {
       const r = terms as RevolverInputs;
@@ -434,7 +600,9 @@ export function naturalScheduleEndDate(type: InstrumentTypeForDispatch, terms: u
       if (s.settlementType !== "STOCK") return null;
       const tranches = s.equityTerms.tranches;
       if (!tranches || tranches.length === 0) return null;
-      return tranches.reduce((max, t) => (t.vestDate > max ? t.vestDate : max), tranches[0].vestDate);
+      const lastVest = tranches.reduce((max, t) => (t.vestDate > max ? t.vestDate : max), tranches[0].vestDate);
+      const servicePeriodEndDate = s.equityTerms.servicePeriodEndDate;
+      return servicePeriodEndDate && servicePeriodEndDate > lastVest ? servicePeriodEndDate : lastVest;
     }
     case "PREFERRED_STOCK": {
       // Only the "mezzanine with a determinable redemption" branch uses the
@@ -460,7 +628,8 @@ export function naturalScheduleEndDate(type: InstrumentTypeForDispatch, terms: u
       // are built over the same `periods` array.)
       const r = terms as RestrictedStockInstrumentTerms;
       if (!r || !r.tranches || r.tranches.length === 0) return null;
-      return r.tranches.reduce((max, t) => (t.vestDate > max ? t.vestDate : max), r.tranches[0].vestDate);
+      const lastVest = r.tranches.reduce((max, t) => (t.vestDate > max ? t.vestDate : max), r.tranches[0].vestDate);
+      return r.servicePeriodEndDate && r.servicePeriodEndDate > lastVest ? r.servicePeriodEndDate : lastVest;
     }
     default:
       return null;
@@ -546,6 +715,60 @@ export function computeVisibleSchedule(
   const periods = buildVisiblePeriods(type, termVersions, through, extraSplitBoundaries);
   const fullSchedule = computeScheduleForInstrument(type, termVersions, periods);
   return fullSchedule.filter((row) => row.periodEnd <= through);
+}
+
+/**
+ * The FULL, end-to-end (grant/issuance through the instrument's natural end), MONTHLY
+ * amortization table — v0.22.0, built for the "preview a full amortization table by
+ * month, then approve it" workflow (see AmortizationScheduleApproval in
+ * prisma/schema.prisma, and the API routes under
+ * src/app/api/instruments/[id]/amortization-schedule/). Unlike `computeVisibleSchedule`,
+ * this is NOT truncated to "as of today" — it's the entire projected schedule from
+ * grant to final vest, exactly what a preview-before-approval screen needs to show, and
+ * exactly what gets persisted into AmortizationScheduleRow once approved.
+ *
+ * MONTHLY, not annual: reuses `buildCalendarMonthlyPeriods` (dateMath.ts) instead of
+ * `buildAnnualPeriods`. `allocateStraightLineByElapsedTime` (the engine underneath
+ * straight-line/graded vesting attribution) is pure calendar-day-elapsed-time math
+ * over whatever periods array it's given, so monthly periods work correctly with
+ * zero engine changes needed — this function is purely a different choice of
+ * `periods`, not a new calculation.
+ *
+ * CALENDAR-aligned, not grant-date-anchored: periods here are real calendar months
+ * (a March-16 grant's first period is the stub 3/16-4/1, then 4/1-5/1, 5/1-6/1, ...,
+ * not "one month after the 16th" every time) — see `buildCalendarMonthlyPeriods`'s
+ * doc comment in dateMath.ts for why. This is deliberately NOT `buildMonthlyPeriods`
+ * (dateMath.ts) — that one is grant-date-anchored by design, which is correct for
+ * the debt daily-accrual demo it was built for but wrong here: an equity/debt book
+ * closes by actual calendar month, so a report of "March's expense" has to mean
+ * every grant's 3/1-3/31 (or a partial stub inside that range for a grant made
+ * mid-March), not a different 30-ish-day window per grant depending on its own
+ * grant-date anniversary.
+ *
+ * ONLY MEANINGFUL FOR TYPES WITH A NATURAL END DATE (see `naturalScheduleEndDate`) —
+ * STOCK_OPTION, RSU, RESTRICTED_STOCK, stock-settled SAR, and mezzanine preferred with
+ * a determinable redemption date. For a period-by-period roll-forward type with no
+ * fixed total to allocate (TERM_LOAN, PIK_NOTE, CONVERTIBLE_NOTE, a liability-
+ * classified WARRANT, ...) there is no well-defined "full schedule to the end" — those
+ * run indefinitely until paid off/exercised/converted, so this throws a clear error
+ * rather than guessing at an arbitrary cutoff. Callers should only offer the
+ * preview/approve UI for types where this doesn't throw.
+ */
+export function computeFullSchedule(type: InstrumentTypeForDispatch, termVersions: TermVersionRecord[]): ScheduleRow[] {
+  if (termVersions.length === 0) {
+    throw new Error("An instrument must have at least one term version to compute a schedule from");
+  }
+  const latestTerms = termVersions[termVersions.length - 1].terms;
+  const naturalEnd = naturalScheduleEndDate(type, latestTerms);
+  if (!naturalEnd) {
+    throw new Error(
+      `"${type}" has no natural end date — it's a period-by-period roll-forward with no fixed total to ` +
+        "allocate, so a full end-to-end amortization table isn't a meaningful concept for this type. " +
+        "Use the live, as-of-today schedule instead."
+    );
+  }
+  const periods = buildCalendarMonthlyPeriods(termVersions[0].effectiveDate, naturalEnd);
+  return computeScheduleForInstrument(type, termVersions, periods);
 }
 
 /**

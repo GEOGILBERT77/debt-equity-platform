@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { LogoutButton } from "@/app/components/LogoutButton";
+import { theme } from "@/lib/theme";
 
 /**
  * The persistent top navigation bar, rendered once from `src/app/layout.tsx` (so
@@ -28,11 +29,17 @@ import { LogoutButton } from "@/app/components/LogoutButton";
  * (see instruments/new/page.tsx and reports/page.tsx's own "pass ?entityId=..."
  * messages) — this component doesn't duplicate that fallback UI itself.
  *
- * NOT A REPLACEMENT for a real "currently active entity" switcher (a persistent
- * dropdown to change which entity you're working in from anywhere, independent of
- * the URL you happen to be on) — that's a reasonable further improvement flagged
- * here rather than guessed at, since it touches how every page resolves its entity
- * rather than just this component.
+ * DEFAULT ENTITY (v0.21.0): when there's no `?entityId=` in the current URL at all,
+ * this falls back to the user's `defaultEntityId` (see prisma/schema.prisma's doc
+ * comment on that column) rather than going to the unscoped destination — so someone
+ * who clicks "New transactions" straight from a page with no entity context lands on
+ * their usual entity instead of hitting a "pass ?entityId=..." dead end. Still NOT a
+ * full "currently active entity" switcher: there's no UI here to change entities
+ * mid-session without going back through the home page or a cap table — this only
+ * covers the "nothing in the URL yet" case. `withEntityId` below never overwrites an
+ * entityId that's already explicitly in the URL, so once you're scoped to a specific
+ * (possibly non-default) entity, every nav click correctly stays on THAT entity, not
+ * silently jumping back to the default.
  *
  * Also absorbs what used to be a separate, second thin bar in layout.tsx (the
  * logged-in user's email + a sign-out button) into this same row's right side, via
@@ -69,14 +76,23 @@ const GAAP_REPORT_GROUPS: { heading: string; items: ReportLink[] }[] = [
       { label: "Journal entries", href: "/reports", scoped: true },
       { label: "Financial statements", href: "/reports/financial-statements", scoped: true },
       { label: "Audit trail", href: "/reports/audit-trail", scoped: true },
+      { label: "Modification audit", href: "/reports/modification-audit", scoped: true },
+      { label: "Grants report", href: "/reports/grants", scoped: true },
       { label: "Cap table export (CSV)", href: "/api/reports/cap-table-export", scoped: true },
+      { label: "Cap table waterfall", href: "/reports/cap-table-waterfall", scoped: true },
+      { label: "Stock option tax/compliance", href: "/reports/option-tax-compliance", scoped: true },
+      { label: "Debt modification / extinguishment", href: "/reports/debt-modification", scoped: true },
+      { label: "Stock option amortization", href: "/reports/stock-option-amortization", scoped: true },
+      { label: "Stock option forecast", href: "/reports/stock-option-forecast", scoped: true },
     ],
   },
   {
-    heading: "ASC calculators",
+    // v0.21.0: "Debt modification / extinguishment" moved up into "Entity reports"
+    // (below) since it's now a real database report, not a calculator — see
+    // REPORTS-CONVERSION-PLAN.md for which of the rest of this group are next.
+    heading: "ASC calculators (standalone — not yet converted to database reports)",
     items: [
       { label: "Option exercise / RSU settlement", href: "/reports/settlement" },
-      { label: "Debt modification / extinguishment", href: "/reports/debt-modification" },
       { label: "Troubled debt restructuring", href: "/reports/troubled-debt-restructuring" },
       { label: "Beneficial conversion feature", href: "/reports/beneficial-conversion-feature" },
       { label: "Embedded derivative bifurcation", href: "/reports/embedded-derivative-bifurcation" },
@@ -95,9 +111,11 @@ function withEntityId(href: string, entityId: string | null): string {
   return `${href}${href.includes("?") ? "&" : "?"}entityId=${entityId}`;
 }
 
-export function NavBar({ userEmail }: { userEmail?: string }) {
+export function NavBar({ userEmail, defaultEntityId }: { userEmail?: string; defaultEntityId?: string | null }) {
   const searchParams = useSearchParams();
-  const entityId = searchParams.get("entityId");
+  // Falls back to the user's default entity ONLY when the URL has no entityId at all —
+  // see the DEFAULT ENTITY note above. An entityId already in the URL always wins.
+  const entityId = searchParams.get("entityId") ?? defaultEntityId ?? null;
   const [openMenu, setOpenMenu] = useState<"transactions" | "reports" | null>(null);
   const navRef = useRef<HTMLElement>(null);
 
@@ -120,9 +138,7 @@ export function NavBar({ userEmail }: { userEmail?: string }) {
         alignItems: "center",
         gap: "0.25rem",
         padding: "0 1rem",
-        borderBottom: "1px solid #ddd",
-        background: "#fafafa",
-        fontFamily: "sans-serif",
+        background: theme.primary,
         fontSize: "0.9rem",
         position: "relative",
       }}
@@ -154,6 +170,13 @@ export function NavBar({ userEmail }: { userEmail?: string }) {
                     {t.label}
                   </Link>
                 ))}
+                <Link
+                  href={withEntityId("/instruments/bulk-upload?type=STOCK_OPTION", entityId)}
+                  style={{ ...dropdownItemStyle, borderTop: `1px solid ${theme.border}`, marginTop: "0.25rem", paddingTop: "0.5rem" }}
+                  onClick={() => setOpenMenu(null)}
+                >
+                  Bulk upload grants (Excel)
+                </Link>
               </div>
               <div>
                 <div style={groupHeadingStyle}>Debt</div>
@@ -171,8 +194,8 @@ export function NavBar({ userEmail }: { userEmail?: string }) {
             </div>
             {!entityId && (
               <div style={dropdownFootnoteStyle}>
-                No entity selected yet — pick one from the home page first, or you'll be asked to on the next
-                screen.
+                No entity selected yet, and no default entity set — pick one from the home page first (or set a
+                default there), or you'll be asked to on the next screen.
               </div>
             )}
           </div>
@@ -181,6 +204,14 @@ export function NavBar({ userEmail }: { userEmail?: string }) {
 
       <Link href={withEntityId("/captable", entityId)} style={navLinkStyle} onClick={() => setOpenMenu(null)}>
         Interactive cap table
+      </Link>
+
+      <Link
+        href={entityId ? `/entities/${entityId}/board-consents` : "/"}
+        style={navLinkStyle}
+        onClick={() => setOpenMenu(null)}
+      >
+        Board consents
       </Link>
 
       <div style={{ position: "relative" }}>
@@ -226,7 +257,7 @@ export function NavBar({ userEmail }: { userEmail?: string }) {
         </Link>
         {userEmail && (
           <>
-            <span style={{ fontSize: "0.8rem", color: "#666" }}>{userEmail}</span>
+            <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.75)" }}>{userEmail}</span>
             <LogoutButton />
           </>
         )}
@@ -235,9 +266,14 @@ export function NavBar({ userEmail }: { userEmail?: string }) {
   );
 }
 
+// v0.34.0 — the nav bar itself is a solid `theme.primary` bar (see the "Slate" palette
+// in theme.ts), so its own links/buttons use `theme.onPrimary`/translucent-white
+// tones rather than the ink/border tokens the rest of the app uses on a light
+// background. The dropdown PANELS below are a separate floating surface on `theme.bg`
+// and use the normal ink/border tokens like everything else.
 const navLinkStyle: React.CSSProperties = {
   padding: "0.7rem 0.6rem",
-  color: "#222",
+  color: theme.onPrimary,
   textDecoration: "none",
   whiteSpace: "nowrap",
 };
@@ -245,11 +281,11 @@ const navLinkStyle: React.CSSProperties = {
 function navButtonStyle(active: boolean): React.CSSProperties {
   return {
     padding: "0.7rem 0.6rem",
-    background: active ? "#eee" : "transparent",
+    background: active ? "rgba(255,255,255,0.12)" : "transparent",
     border: "none",
-    borderBottom: active ? "2px solid #333" : "2px solid transparent",
+    borderBottom: active ? `2px solid ${theme.accent}` : "2px solid transparent",
     font: "inherit",
-    color: "#222",
+    color: theme.onPrimary,
     cursor: "pointer",
     whiteSpace: "nowrap",
   };
@@ -259,9 +295,10 @@ const dropdownStyle: React.CSSProperties = {
   position: "absolute",
   top: "100%",
   left: 0,
-  background: "#fff",
-  border: "1px solid #ddd",
-  boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
+  background: theme.surface,
+  border: `1px solid ${theme.border}`,
+  borderRadius: 8,
+  boxShadow: "0 12px 24px -8px rgba(28,39,51,0.25)",
   padding: "0.75rem",
   zIndex: 20,
   minWidth: 280,
@@ -276,24 +313,25 @@ const groupHeadingStyle: React.CSSProperties = {
   fontSize: "0.75rem",
   textTransform: "uppercase",
   letterSpacing: "0.03em",
-  color: "#888",
+  color: theme.inkMuted,
   margin: "0.5rem 0 0.25rem",
 };
 
 const dropdownItemStyle: React.CSSProperties = {
   display: "block",
   padding: "0.3rem 0.25rem",
-  color: "#222",
+  color: theme.ink,
   textDecoration: "none",
   fontSize: "0.85rem",
   whiteSpace: "nowrap",
+  borderRadius: 4,
 };
 
 const dropdownFootnoteStyle: React.CSSProperties = {
   marginTop: "0.5rem",
   paddingTop: "0.5rem",
-  borderTop: "1px solid #eee",
+  borderTop: `1px solid ${theme.border}`,
   fontSize: "0.75rem",
-  color: "#888",
+  color: theme.inkMuted,
   maxWidth: 260,
 };

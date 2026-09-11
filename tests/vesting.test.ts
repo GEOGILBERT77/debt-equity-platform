@@ -57,6 +57,53 @@ test("service condition, straight-line: ties to $24,000 total and matches day-we
 });
 
 /**
+ * servicePeriodEndDate: same $24,000 grant/vesting shape as the golden scenario
+ * above, but with an explicit servicePeriodEndDate two years AFTER the last vesting
+ * tranche (2031-01-01 instead of 2029-01-01) — the exact shape of George's "vesting
+ * completes in 4 years but the requisite service period is 6" example. Straight-line
+ * attribution should spread the full $24,000 across the LONGER 6-year window, not
+ * stop recognizing at the 4-year vest date, and should still tie out exactly.
+ */
+test("service condition, straight-line: servicePeriodEndDate overrides the last tranche's vest date when later", () => {
+  const periods = [
+    { label: "Y1", start: "2025-01-01", end: "2026-01-01" },
+    { label: "Y2", start: "2026-01-01", end: "2027-01-01" },
+    { label: "Y3", start: "2027-01-01", end: "2028-01-01" },
+    { label: "Y4", start: "2028-01-01", end: "2029-01-01" },
+    { label: "Y5", start: "2029-01-01", end: "2030-01-01" },
+    { label: "Y6", start: "2030-01-01", end: "2031-01-01" },
+  ];
+  const schedule = buildServiceConditionSchedule(
+    {
+      grantDate: "2025-01-01",
+      quantity: 12000,
+      grantDateFairValuePerUnit: 2,
+      attributionMethod: "straight-line",
+      tranches: [
+        { id: "t1", vestDate: "2026-01-01", quantity: 3000 },
+        { id: "t2", vestDate: "2027-01-01", quantity: 3000 },
+        { id: "t3", vestDate: "2028-01-01", quantity: 3000 },
+        { id: "t4", vestDate: "2029-01-01", quantity: 3000 }, // all shares vested by here...
+      ],
+      servicePeriodEndDate: "2031-01-01", // ...but expense keeps recognizing through here
+    },
+    periods
+  );
+
+  // Every one of the 6 years gets a non-trivial slice — NOT all recognized by Y4 the
+  // way the plain (no servicePeriodEndDate) golden scenario above would.
+  for (const row of schedule) {
+    assert.ok(Number(row.amount.toFixed(2)) > 0, `${row.label} should have a non-zero allocation`);
+  }
+  const total = schedule.reduce((sum, row) => sum.plus(row.amount), schedule[0].amount.minus(schedule[0].amount));
+  assert.equal(total.toFixed(2), "24000.00");
+  // Roughly 4/6 of the total should be recognized by the end of Y4 (the vest date),
+  // not the full amount — the whole point of the override.
+  const throughY4 = schedule.slice(0, 4).reduce((sum, row) => sum + Number(row.amount.toFixed(4)), 0);
+  assert.ok(throughY4 > 15000 && throughY4 < 17000, `expected ~4/6 of $24,000 through Y4, got ${throughY4}`);
+});
+
+/**
  * GOLDEN SCENARIO: same $24,000 grant, but graded (FIN 28) attribution — each 3,000-
  * option tranche is its own $6,000 award, vesting straight-line from grant date to its
  * own vest date. This front-loads expense recognition relative to straight-line: by

@@ -1,4 +1,4 @@
-import { Money, money, Decimal, DecimalValue, JournalEntry } from "./types.js";
+import { Money, money, Decimal, DecimalValue, JournalEntry, ISODate } from "./types.js";
 import { blackScholesCallValue } from "./blackScholes.js";
 import { buildCashExerciseEntry, CashExerciseInput } from "./optionSettlement.js";
 
@@ -283,4 +283,124 @@ export function buildEsppPurchaseEntry(input: EsppPurchaseInput): JournalEntry {
     description: `ESPP purchase — ${Decimal.from(input.quantityPurchased).toFixed(2)} shares`,
     ascReference: "ASC 718-50 (employee stock purchase plan)",
   };
+}
+
+// =============================================================================
+// IRS FORM 3922 DATA ASSEMBLY (v0.36.0) — "Transfer of Stock Acquired Through an
+// Employee Stock Purchase Plan Under Section 423(c)". Mirrors
+// optionTaxCompliance.ts's computeForm3921Data exactly: same
+// entity/stakeholder-required-field pattern, same ok/missingFields result shape, same
+// deliberate choice to compute calendar-rule deadlines WITHOUT business-day
+// adjustment (see that function's own doc comment — this repeats the same convention
+// rather than silently doing something different for a sibling form).
+//
+// THIS APPLIES ONLY TO A SECTION 423(c) (tax-qualified) ESPP — a Section 423 plan
+// specifically, not every "employee stock purchase" arrangement. A non-qualified
+// purchase plan doesn't generate a Form 3922 obligation at all; that determination is
+// the caller's to make (typically via `classifyEsppPlan` and the plan's own terms),
+// not something this function checks.
+//
+// BOX 8 IS THE ONE FIELD THAT NEEDS EXPLAINING: "exercise price per share determined
+// as if the option was exercised on the date the option was granted." This only has a
+// distinct value from Box 5 (the actual exercise price paid) when the plan's price is
+// itself variable/look-back-determined — the common real-world case this module's own
+// `computeEsppLookbackFairValue` exists for. For a plan with a single FIXED discount
+// off a known price (no look-back), Box 8 is the same figure as Box 5, and this
+// function defaults it to that when not supplied, rather than requiring a caller to
+// pass in a duplicate number for the common case.
+export interface Form3922TransferorInfo {
+  name: string;
+  address: string;
+  employerIdentificationNumber: string;
+}
+
+export interface Form3922RecipientInfo {
+  name: string;
+  address: string;
+  taxIdNumber: string;
+}
+
+export interface Form3922Data {
+  transferor: Form3922TransferorInfo;
+  recipient: Form3922RecipientInfo;
+  /** Box 1. */
+  dateOptionGranted: ISODate;
+  /** Box 2. */
+  dateOptionExercised: ISODate;
+  /** Box 3. */
+  fairMarketValuePerShareOnGrantDate: Money;
+  /** Box 4. */
+  fairMarketValuePerShareOnExerciseDate: Money;
+  /** Box 5. */
+  exercisePricePaidPerShare: Money;
+  /** Box 6. */
+  sharesTransferred: Money;
+  /** Box 7 — usually the same as Box 2 for a straightforward purchase, but modeled
+   * separately since the two can differ (e.g. a delayed settlement). */
+  dateLegalTitleTransferred: ISODate;
+  /** Box 8 — see this section's module-level doc comment for when this differs from
+   * Box 5, and the no-look-back default this function applies when omitted. */
+  exercisePriceIfGrantedDatePricing: Money;
+  taxYear: number;
+  furnishToEmployeeDeadline: ISODate;
+  irsPaperFilingDeadline: ISODate;
+  irsElectronicFilingDeadline: ISODate;
+}
+
+export interface ComputeForm3922DataParams {
+  entity: { name: string; address: string | null; employerIdentificationNumber: string | null };
+  stakeholder: { name: string; address: string | null; taxIdNumber: string | null };
+  grantDate: ISODate;
+  exerciseDate: ISODate;
+  fairMarketValuePerShareAtGrant: DecimalValue;
+  fairMarketValuePerShareAtExercise: DecimalValue;
+  exercisePricePaidPerShare: DecimalValue;
+  sharesTransferred: DecimalValue;
+  /** Defaults to `exerciseDate` when omitted — the common case. */
+  dateLegalTitleTransferred?: ISODate;
+  /** Defaults to `exercisePricePaidPerShare` when omitted — see the module doc
+   * comment on when a look-back plan needs this to actually differ. */
+  exercisePriceIfGrantedDatePricing?: DecimalValue;
+}
+
+export type ComputeForm3922DataResult =
+  | { ok: true; data: Form3922Data }
+  | { ok: false; missingFields: string[] };
+
+export function computeForm3922Data(params: ComputeForm3922DataParams): ComputeForm3922DataResult {
+  const missingFields: string[] = [];
+  if (!params.entity.employerIdentificationNumber) missingFields.push("Entity.employerIdentificationNumber (transferor EIN)");
+  if (!params.entity.address) missingFields.push("Entity.address (transferor address)");
+  if (!params.stakeholder.taxIdNumber) missingFields.push("Stakeholder.taxIdNumber (recipient TIN)");
+  if (!params.stakeholder.address) missingFields.push("Stakeholder.address (recipient address)");
+  if (missingFields.length > 0) return { ok: false, missingFields };
+
+  const exerciseYear = Number(params.exerciseDate.slice(0, 4));
+  const followingYear = exerciseYear + 1;
+
+  const data: Form3922Data = {
+    transferor: {
+      name: params.entity.name,
+      address: params.entity.address as string,
+      employerIdentificationNumber: params.entity.employerIdentificationNumber as string,
+    },
+    recipient: {
+      name: params.stakeholder.name,
+      address: params.stakeholder.address as string,
+      taxIdNumber: params.stakeholder.taxIdNumber as string,
+    },
+    dateOptionGranted: params.grantDate,
+    dateOptionExercised: params.exerciseDate,
+    fairMarketValuePerShareOnGrantDate: new Decimal(params.fairMarketValuePerShareAtGrant),
+    fairMarketValuePerShareOnExerciseDate: new Decimal(params.fairMarketValuePerShareAtExercise),
+    exercisePricePaidPerShare: new Decimal(params.exercisePricePaidPerShare),
+    sharesTransferred: new Decimal(params.sharesTransferred),
+    dateLegalTitleTransferred: params.dateLegalTitleTransferred ?? params.exerciseDate,
+    exercisePriceIfGrantedDatePricing: new Decimal(params.exercisePriceIfGrantedDatePricing ?? params.exercisePricePaidPerShare),
+    taxYear: exerciseYear,
+    furnishToEmployeeDeadline: `${followingYear}-01-31`,
+    irsPaperFilingDeadline: `${followingYear}-02-28`,
+    irsElectronicFilingDeadline: `${followingYear}-03-31`,
+  };
+  return { ok: true, data };
 }

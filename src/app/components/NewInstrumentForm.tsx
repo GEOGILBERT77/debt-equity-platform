@@ -5,6 +5,10 @@ import { useMemo, useState } from "react";
 import {
   CommonStockForm,
   CommonStockState,
+  MarketConditionGrantForm,
+  MarketConditionGrantState,
+  PerformanceConditionGrantForm,
+  PerformanceConditionGrantState,
   PikNoteForm,
   PikNoteState,
   PreferredStockForm,
@@ -17,30 +21,39 @@ import {
   SarState,
   ServiceConditionGrantForm,
   ServiceConditionGrantState,
+  StockOptionGrantForm,
+  StockOptionGrantState,
   TermDebtForm,
   TermDebtState,
   WarrantForm,
   WarrantState,
   defaultCommonStockState,
+  defaultMarketConditionGrantState,
+  defaultPerformanceConditionGrantState,
   defaultPikNoteState,
   defaultPreferredStockState,
   defaultRestrictedStockState,
   defaultRevolverState,
   defaultSarState,
   defaultServiceConditionGrantState,
+  defaultStockOptionGrantState,
   defaultTermDebtState,
   defaultWarrantState,
   toCommonStockTerms,
+  toMarketConditionGrantTerms,
+  toPerformanceConditionGrantTerms,
   toPikNoteTerms,
   toPreferredStockTerms,
   toRestrictedStockTerms,
   toRevolverTerms,
   toSarTerms,
   toServiceConditionGrantTerms,
+  toStockOptionGrantTerms,
   toTermDebtTerms,
   toWarrantTerms,
 } from "./termsFields/TypeForms";
 import { hintStyle, labelStyle, inputStyle as fieldInputStyle } from "./termsFields/FieldPrimitives";
+import { theme } from "@/lib/theme";
 
 const INSTRUMENT_TYPES = [
   "STOCK_OPTION",
@@ -121,7 +134,10 @@ export function NewInstrumentForm({
   // preserves whatever was already entered for each — a nice-to-have this pass adds
   // for free by keeping all eleven states around rather than resetting on every switch
   // the way the old single-JSON-textarea version had to.
-  const [stockOption, setStockOption] = useState<ServiceConditionGrantState>(defaultServiceConditionGrantState);
+  const [stockOptionConditionType, setStockOptionConditionType] = useState<"service" | "performance" | "market">("service");
+  const [stockOption, setStockOption] = useState<StockOptionGrantState>(defaultStockOptionGrantState);
+  const [stockOptionPerformance, setStockOptionPerformance] = useState<PerformanceConditionGrantState>(defaultPerformanceConditionGrantState);
+  const [stockOptionMarket, setStockOptionMarket] = useState<MarketConditionGrantState>(defaultMarketConditionGrantState);
   const [rsu, setRsu] = useState<ServiceConditionGrantState>(defaultServiceConditionGrantState);
   const [termLoan, setTermLoan] = useState<TermDebtState>(defaultTermDebtState);
   const [pikNote, setPikNote] = useState<PikNoteState>(defaultPikNoteState);
@@ -142,7 +158,9 @@ export function NewInstrumentForm({
   function currentTerms(): unknown {
     switch (type) {
       case "STOCK_OPTION":
-        return toServiceConditionGrantTerms(stockOption);
+        if (stockOptionConditionType === "performance") return toPerformanceConditionGrantTerms(stockOptionPerformance);
+        if (stockOptionConditionType === "market") return toMarketConditionGrantTerms(stockOptionMarket);
+        return toStockOptionGrantTerms(stockOption);
       case "RSU":
         return toServiceConditionGrantTerms(rsu);
       case "TERM_LOAN":
@@ -175,7 +193,23 @@ export function NewInstrumentForm({
     }
     // Recompute whenever anything that feeds currentTerms() changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, stockOption, rsu, termLoan, pikNote, revolver, convertibleNote, warrant, commonStock, preferredStock, sar, restrictedStock]);
+  }, [
+    type,
+    stockOptionConditionType,
+    stockOption,
+    stockOptionPerformance,
+    stockOptionMarket,
+    rsu,
+    termLoan,
+    pikNote,
+    revolver,
+    convertibleNote,
+    warrant,
+    commonStock,
+    preferredStock,
+    sar,
+    restrictedStock,
+  ]);
 
   function switchToJsonMode() {
     setJsonText(jsonPreview);
@@ -233,7 +267,7 @@ export function NewInstrumentForm({
       <label style={labelStyle}>
         Stakeholder
         {stakeholders.length === 0 ? (
-          <p style={{ color: "crimson" }}>This entity has no stakeholders yet — add one first, then come back here.</p>
+          <p style={{ color: theme.danger.fg }}>This entity has no stakeholders yet — add one first, then come back here.</p>
         ) : (
           <select value={stakeholderId} onChange={(e) => setStakeholderId(e.target.value)} style={fieldInputStyle}>
             {stakeholders.map((s) => (
@@ -273,10 +307,32 @@ export function NewInstrumentForm({
         <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} style={fieldInputStyle} />
       </label>
 
-      <div style={{ margin: "1rem 0", padding: "0.75rem", background: "#fafafa", border: "1px solid #eee", borderRadius: 4 }}>
+      <div style={{ margin: "1rem 0", padding: "0.75rem", background: theme.surfaceAlt, border: `1px solid ${theme.border}`, borderRadius: 4 }}>
         {mode === "form" ? (
           <>
-            {type === "STOCK_OPTION" && <ServiceConditionGrantForm value={stockOption} onChange={setStockOption} />}
+            {type === "STOCK_OPTION" && (
+              <>
+                <label style={labelStyle}>
+                  Vesting condition
+                  <select
+                    value={stockOptionConditionType}
+                    onChange={(e) => setStockOptionConditionType(e.target.value as "service" | "performance" | "market")}
+                    style={fieldInputStyle}
+                  >
+                    <option value="service">Service (time-based)</option>
+                    <option value="performance">Performance</option>
+                    <option value="market">Market</option>
+                  </select>
+                </label>
+                {stockOptionConditionType === "service" && <StockOptionGrantForm value={stockOption} onChange={setStockOption} />}
+                {stockOptionConditionType === "performance" && (
+                  <PerformanceConditionGrantForm value={stockOptionPerformance} onChange={setStockOptionPerformance} />
+                )}
+                {stockOptionConditionType === "market" && (
+                  <MarketConditionGrantForm value={stockOptionMarket} onChange={setStockOptionMarket} />
+                )}
+              </>
+            )}
             {type === "RSU" && <ServiceConditionGrantForm value={rsu} onChange={setRsu} />}
             {type === "TERM_LOAN" && <TermDebtForm value={termLoan} onChange={setTermLoan} />}
             {type === "PIK_NOTE" && <PikNoteForm value={pikNote} onChange={setPikNote} />}
@@ -309,7 +365,7 @@ export function NewInstrumentForm({
           <>
             <label style={labelStyle}>
               Terms (raw JSON)
-              <textarea value={jsonText} onChange={(e) => setJsonText(e.target.value)} rows={14} style={{ ...fieldInputStyle, fontFamily: "monospace" }} />
+              <textarea value={jsonText} onChange={(e) => setJsonText(e.target.value)} rows={14} style={{ ...fieldInputStyle, fontFamily: theme.font.mono }} />
             </label>
             <button type="button" onClick={switchToFormMode} style={linkButtonStyle}>
               Back to guided form (discards JSON edits)
@@ -321,7 +377,7 @@ export function NewInstrumentForm({
       <button type="submit" disabled={status === "loading" || stakeholders.length === 0} style={buttonStyle}>
         {status === "loading" ? "Creating…" : "Create instrument"}
       </button>
-      {message && <p style={{ color: "crimson", marginTop: "0.5rem" }}>{message}</p>}
+      {message && <p style={{ color: theme.danger.fg, marginTop: "0.5rem" }}>{message}</p>}
       <p style={hintStyle}>
         There is still no server-side conversion assistant — a malformed value comes back as a specific field-level
         error after you submit, not before.
@@ -332,15 +388,15 @@ export function NewInstrumentForm({
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
-  border: "1px solid #333",
+  border: `1px solid ${theme.ink}`,
   borderRadius: 4,
-  background: "#f5f5f5",
+  background: theme.surfaceAlt,
   cursor: "pointer",
 };
 const linkButtonStyle: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#2563eb",
+  color: theme.accent,
   cursor: "pointer",
   padding: 0,
   fontSize: "0.85rem",

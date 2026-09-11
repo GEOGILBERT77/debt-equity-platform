@@ -10,9 +10,12 @@ import {
   naturalScheduleEndDate,
   computeVisibleSchedule,
   computeScheduleForInstrument,
+  computeFullSchedule,
   TermVersionRecord,
+  StockOptionPerformanceConditionTerms,
+  StockOptionMarketConditionTerms,
 } from "../src/lib/accounting/dispatch.js";
-import { buildAnnualPeriods } from "../src/lib/accounting/dateMath.js";
+import { buildAnnualPeriods, buildMonthlyPeriods, buildCalendarMonthlyPeriods } from "../src/lib/accounting/dateMath.js";
 import { RevolverInputs } from "../src/lib/accounting/debtAmortization.js";
 import { ConventionalConvertibleNoteInputs } from "../src/lib/accounting/convertibleNote.js";
 import { ServiceConditionGrant } from "../src/lib/accounting/vesting.js";
@@ -378,6 +381,96 @@ test("naturalScheduleEndDate: RESTRICTED_STOCK returns the latest tranche vest d
   assert.equal(naturalScheduleEndDate("RESTRICTED_STOCK", terms), "2028-06-01");
 });
 
+test("naturalScheduleEndDate: STOCK_OPTION/RSU/RESTRICTED_STOCK use servicePeriodEndDate over the last tranche's vest date when it's later, but not when it's earlier or absent", () => {
+  const base = {
+    grantDate: "2025-01-01",
+    quantity: "4000",
+    grantDateFairValuePerUnit: "2.00",
+    attributionMethod: "straight-line" as const,
+    tranches: [
+      { id: "t1", vestDate: "2026-01-01", quantity: "2000" },
+      { id: "t2", vestDate: "2028-06-01", quantity: "2000" },
+    ],
+  };
+  // Absent: falls back to the last tranche's vest date, same as before this field existed.
+  assert.equal(naturalScheduleEndDate("STOCK_OPTION", base), "2028-06-01");
+  // Later: the service period wins.
+  assert.equal(naturalScheduleEndDate("STOCK_OPTION", { ...base, servicePeriodEndDate: "2031-01-01" }), "2031-01-01");
+  // Earlier (shouldn't happen once termsValidation.ts rejects it at write time, but the
+  // engine itself stays defensive rather than truncating the schedule): the vest date
+  // still wins, since it can never be right to end the schedule before all shares vest.
+  assert.equal(naturalScheduleEndDate("STOCK_OPTION", { ...base, servicePeriodEndDate: "2027-01-01" }), "2028-06-01");
+
+  assert.equal(naturalScheduleEndDate("RSU", { ...base, servicePeriodEndDate: "2031-01-01" }), "2031-01-01");
+
+  const restrictedStockTerms: RestrictedStockInstrumentTerms = { ...base, purchasePricePerShare: "0.01" };
+  assert.equal(naturalScheduleEndDate("RESTRICTED_STOCK", { ...restrictedStockTerms, servicePeriodEndDate: "2031-01-01" }), "2031-01-01");
+});
+
+test("dispatch: STOCK_OPTION conditionType discriminates service/performance/market, and all three tie out to the same total for equivalent straight-line inputs", () => {
+  const grantDate = "2026-01-01";
+  const serviceEnd = "2032-01-01"; // 6 years
+  const quantity = 10000;
+  const fairValue = "3.50";
+
+  // service (the default, pre-existing behavior — conditionType omitted entirely)
+  const serviceTerms = {
+    grantDate,
+    quantity,
+    grantDateFairValuePerUnit: fairValue,
+    attributionMethod: "straight-line" as const,
+    tranches: [{ id: "t1", vestDate: serviceEnd, quantity }],
+  };
+  assert.equal(naturalScheduleEndDate("STOCK_OPTION", serviceTerms), serviceEnd);
+  const servicePeriods = buildMonthlyPeriods(grantDate, serviceEnd);
+  const serviceSchedule = getScheduleBuilder("STOCK_OPTION")(serviceTerms, servicePeriods);
+
+  // market
+  const marketTerms: StockOptionMarketConditionTerms = {
+    conditionType: "market",
+    grantDate,
+    quantity,
+    grantDateFairValuePerUnit: fairValue,
+    derivedServiceEndDate: serviceEnd,
+  };
+  assert.equal(naturalScheduleEndDate("STOCK_OPTION", marketTerms), serviceEnd);
+  const marketSchedule = getScheduleBuilder("STOCK_OPTION")(marketTerms, servicePeriods);
+
+  // performance, assessed probable for every period (the straight-line case)
+  const performanceTerms: StockOptionPerformanceConditionTerms = {
+    conditionType: "performance",
+    grantDate,
+    quantity,
+    grantDateFairValuePerUnit: fairValue,
+    requisiteServiceEndDate: serviceEnd,
+    probabilityAssessments: servicePeriods.map((p) => ({ date: p.end, probable: true })),
+  };
+  assert.equal(naturalScheduleEndDate("STOCK_OPTION", performanceTerms), serviceEnd);
+  const performanceSchedule = getScheduleBuilder("STOCK_OPTION")(performanceTerms, servicePeriods);
+
+  for (const schedule of [serviceSchedule, marketSchedule, performanceSchedule]) {
+    assert.equal(schedule.length, 72);
+    const total = schedule.reduce((sum, row) => sum.plus(row.amount), schedule[0].amount.minus(schedule[0].amount));
+    assert.equal(total.toFixed(2), "35000.00");
+  }
+  // Same total service window, same total value, same "always probable/no attrition"
+  // shape — all three engines should produce IDENTICAL per-period amounts here, not
+  // just the same total.
+  assert.equal(serviceSchedule[0].amount.toFixed(4), marketSchedule[0].amount.toFixed(4));
+  assert.equal(marketSchedule[0].amount.toFixed(4), performanceSchedule[0].amount.toFixed(4));
+
+  // A performance assessment that goes improbable partway through should recognize
+  // LESS than the always-probable case — confirms the discriminator actually reaches
+  // the real, "genuinely stateful" performance engine, not just a straight-line stand-in.
+  const partlyImprobable: StockOptionPerformanceConditionTerms = {
+    ...performanceTerms,
+    probabilityAssessments: servicePeriods.map((p, i) => ({ date: p.end, probable: i < 36 })), // improbable after year 3
+  };
+  const partlyImprobableSchedule = getScheduleBuilder("STOCK_OPTION")(partlyImprobable, servicePeriods);
+  const partlyImprobableTotal = partlyImprobableSchedule.reduce((sum, row) => sum + Number(row.amount.toFixed(4)), 0);
+  assert.equal(partlyImprobableTotal.toFixed(2), "0.00"); // reverses fully once improbable — see buildPerformanceConditionSchedule
+});
+
 test("computeVisibleSchedule: RESTRICTED_STOCK previewed at an interim cutoff is not overstated on the expense side, and the reclass side correctly shows only what's actually vested so far", () => {
   const versions: TermVersionRecord[] = [
     {
@@ -652,4 +745,51 @@ test("computeVisibleSchedule: TERM_LOAN/PIK_NOTE/CONVERTIBLE_NOTE/WARRANT are un
     assert.equal(row.amount.toFixed(4), viaOldPattern[i].amount.toFixed(4));
     assert.equal(row.endingBalance!.toFixed(4), viaOldPattern[i].endingBalance!.toFixed(4));
   });
+});
+
+test("computeFullSchedule: STOCK_OPTION monthly amortization aligns to CALENDAR months, not grant-date-anchored rolling months", () => {
+  // Direct regression test for a real bug: computeFullSchedule used to build its
+  // monthly periods with buildMonthlyPeriods (grant-date-anchored — a March 16 grant
+  // produced periods 3/16-4/16, 4/16-5/16, ...), so a report grouping by calendar
+  // month attributed a chunk of April's actual days to "March." Fixed by switching to
+  // buildCalendarMonthlyPeriods (dateMath.ts), which aligns every period to the 1st
+  // of the month and makes the first (and usually last) period a stub instead.
+  const terms: ServiceConditionGrant = {
+    grantDate: "2026-03-16",
+    quantity: "10000",
+    grantDateFairValuePerUnit: "3.60",
+    strikePrice: "12.00",
+    attributionMethod: "straight-line",
+    tranches: [{ id: "t1", vestDate: "2032-03-16", quantity: "10000" }],
+  };
+  const termVersions: TermVersionRecord[] = [{ effectiveDate: "2026-03-16", label: "Original grant", terms }];
+  const schedule = computeFullSchedule("STOCK_OPTION", termVersions);
+
+  // The very first period is a STUB covering only 3/16-4/1 (16 days), not a full
+  // "month" running 3/16-4/16 the way the old grant-date-anchored builder produced.
+  assert.equal(schedule[0].periodStart, "2026-03-16");
+  assert.equal(schedule[0].periodEnd, "2026-04-01");
+  // Every period after the first stub starts on the 1st of a calendar month.
+  for (const row of schedule.slice(1, -1)) {
+    assert.equal(row.periodStart.slice(8), "01", `${row.periodStart} should start on the 1st`);
+  }
+  // The last period is also a stub (2032-03-16 isn't the 1st of a month): 3/1-3/16.
+  const last = schedule[schedule.length - 1];
+  assert.equal(last.periodStart, "2032-03-01");
+  assert.equal(last.periodEnd, "2032-03-16");
+  // A full calendar-month period (e.g. April) recognizes MORE than the March stub,
+  // since it covers more elapsed days — proving expense is genuinely day-count based
+  // per calendar month, not a flat "1/72nd every period" assumption.
+  assert.ok(schedule[1].amount.toNumber() > schedule[0].amount.toNumber());
+  // Full-precision total still ties exactly to quantity x grant-date fair value —
+  // recognizing by calendar month instead of by grant-date anchor redistributes WHEN
+  // expense lands, never how much in total.
+  const total = schedule.reduce((sum, row) => sum + row.amount.toNumber(), 0);
+  assert.ok(Math.abs(total - 36000) < 0.01, `total was ${total}`);
+
+  // And this is a genuinely different (and correct) period grid than the old
+  // grant-date-anchored builder would have produced for the same inputs.
+  const oldStyleFirstPeriodEnd = buildMonthlyPeriods("2026-03-16", "2032-03-16")[0].end;
+  assert.equal(oldStyleFirstPeriodEnd, "2026-04-16");
+  assert.notEqual(schedule[0].periodEnd, oldStyleFirstPeriodEnd);
 });

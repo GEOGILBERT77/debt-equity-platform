@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { theme } from "@/lib/theme";
 
 const STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR", "ENTITY_HOLDER"] as const;
 
@@ -21,7 +22,7 @@ export default function NewStakeholderPage() {
 
   if (!entityId) {
     return (
-      <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+      <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
           Pass <code>?entityId=...</code>, or go to <Link href="/">the entity list</Link> and use "Add a
           stakeholder" from a specific entity's cap table.
@@ -54,7 +55,7 @@ export default function NewStakeholderPage() {
   }
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 500 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 500 }}>
       <p>
         <Link href={`/captable?entityId=${entityId}`}>&larr; Cap table</Link>
       </p>
@@ -81,7 +82,7 @@ export default function NewStakeholderPage() {
         <button type="submit" disabled={status === "loading"} style={buttonStyle}>
           {status === "loading" ? "Creating…" : "Create stakeholder, then add an instrument"}
         </button>
-        {message && <p style={{ color: "crimson", marginTop: "0.5rem" }}>{message}</p>}
+        {message && <p style={{ color: theme.danger.fg, marginTop: "0.5rem" }}>{message}</p>}
       </form>
     </main>
   );
@@ -89,9 +90,9 @@ export default function NewStakeholderPage() {
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
-  border: "1px solid #333",
+  border: `1px solid ${theme.ink}`,
   borderRadius: 4,
-  background: "#f5f5f5",
+  background: theme.surfaceAlt,
   cursor: "pointer",
 };
 const labelStyle: React.CSSProperties = { display: "block", margin: "0.75rem 0", fontSize: "0.9rem" };

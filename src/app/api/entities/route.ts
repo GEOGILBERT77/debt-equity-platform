@@ -57,6 +57,18 @@ export async function POST(req: NextRequest) {
     await tx.entityAccess.create({
       data: { userId: user.id, entityId: created.id, role: "OWNER" },
     });
+    // v0.21.0 "default entity" — auto-set on a user's FIRST entity only (never
+    // overwrite one they already picked), so the common single-entity user never has
+    // to take an extra "set as default" step, while a user managing several entities
+    // keeps whatever they've explicitly chosen (see PATCH /api/users/default-entity).
+    // `user.defaultEntityId` on the CurrentUser passed into this route is a snapshot
+    // from whenever the session was verified, not necessarily this instant — updating
+    // conditioned on the CURRENT row (re-read inside this same transaction) is what
+    // actually prevents a race from clobbering a default set moments earlier.
+    const currentUserRow = await tx.user.findUnique({ where: { id: user.id }, select: { defaultEntityId: true } });
+    if (!currentUserRow?.defaultEntityId) {
+      await tx.user.update({ where: { id: user.id }, data: { defaultEntityId: created.id } });
+    }
     return created;
   });
 

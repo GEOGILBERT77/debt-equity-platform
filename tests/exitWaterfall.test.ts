@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildExitWaterfall, WaterfallClassInput } from "../src/lib/accounting/exitWaterfall.js";
+import { buildExitWaterfall, buildExitWaterfallScenarios, WaterfallClassInput } from "../src/lib/accounting/exitWaterfall.js";
 
 /**
  * Every scenario below is hand-computed in the doc comment/commit history for
@@ -141,4 +141,34 @@ test("exitWaterfall: plain common-only cap table — every dollar goes pro-rata 
   const employee = result.classResults.find((r) => r.id === "employee")!;
   assert.equal(founder.totalProceeds.toFixed(2), "12000000.00");
   assert.equal(employee.totalProceeds.toFixed(2), "8000000.00");
+});
+
+test("buildExitWaterfallScenarios: runs the same class stack independently at each exit value, matching individual buildExitWaterfall calls", () => {
+  const classes: WaterfallClassInput[] = [
+    { id: "common", name: "Common", seniorityRank: 99, shares: 8_000_000, liquidationPreferencePerShare: 0, participating: false },
+    { id: "seriesA", name: "Series A", seniorityRank: 1, shares: 2_000_000, liquidationPreferencePerShare: 1, participating: false },
+  ];
+  const scenarios = buildExitWaterfallScenarios(
+    [
+      { label: "Low", exitProceeds: 5_000_000 },
+      { label: "High", exitProceeds: 50_000_000 },
+    ],
+    classes
+  );
+  assert.equal(scenarios.length, 2);
+  assert.equal(scenarios[0].label, "Low");
+  const lowSeriesA = scenarios[0].result.classResults.find((r) => r.id === "seriesA")!;
+  assert.equal(lowSeriesA.converted, false); // matches the standalone "low exit" test above
+  assert.equal(lowSeriesA.totalProceeds.toFixed(2), "2000000.00");
+
+  const highSeriesA = scenarios[1].result.classResults.find((r) => r.id === "seriesA")!;
+  assert.equal(highSeriesA.converted, true); // matches the standalone "high exit" test above
+  assert.equal(highSeriesA.totalProceeds.toFixed(2), "10000000.00");
+
+  // Independent calls — verify against buildExitWaterfall directly, not just internal consistency.
+  const directLow = buildExitWaterfall(5_000_000, classes);
+  assert.equal(
+    scenarios[0].result.totalDistributed.toFixed(2),
+    directLow.totalDistributed.toFixed(2)
+  );
 });
