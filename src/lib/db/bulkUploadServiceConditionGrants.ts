@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { generateStandardMonthlyTranches } from "@/lib/accounting/vesting";
 import { validateInstrumentTerms, TermsValidationError } from "@/lib/accounting/termsValidation";
@@ -318,7 +319,21 @@ export async function importParsedGrantRows(
             type,
             issueDate: new Date(row.grantDate),
             termVersions: {
-              create: [{ effectiveDate: new Date(row.grantDate), label: "Original terms (bulk upload)", terms, createdByUserId }],
+              // `terms` here is a concretely-typed object literal (built a few lines up,
+              // with a real `Tranche[]` field) rather than parsed from an `any`-typed
+              // request body like every other instrument-creation route — that's exactly
+              // why this is the one spot that needs the explicit `as unknown as
+              // Prisma.InputJsonValue` cast: TypeScript won't structurally match a
+              // concrete interface array against Prisma's JSON input type on its own
+              // (same "go through unknown first" fix as this delivery's earlier casts).
+              create: [
+                {
+                  effectiveDate: new Date(row.grantDate),
+                  label: "Original terms (bulk upload)",
+                  terms: terms as unknown as Prisma.InputJsonValue,
+                  createdByUserId,
+                },
+              ],
             },
           },
         });
