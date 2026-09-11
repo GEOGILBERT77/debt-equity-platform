@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { getCurrentUserFromToken } from "@/lib/auth/authGuard";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import { db } from "@/lib/db";
 import { NavBar } from "@/app/components/NavBar";
 import "./globals.css";
 
@@ -25,11 +26,28 @@ export const metadata = {
  * `fallback={null}` is deliberate: on the very first paint before hydration, showing
  * nothing is less jarring than a half-styled nav bar popping in a moment later.
  *
+ * ENTITY SWITCHER (v0.36.0): NavBar also needs the full list of entities this user has
+ * access to, to render as a dropdown (see NavBar.tsx's doc comment on why — added
+ * directly in response to a user report that navigating between entities only through
+ * the home page's entity list, with everything else requiring `?entityId=` already in
+ * the URL, "doesn't work"). Fetched here rather than inside NavBar itself because
+ * NavBar is a Client Component (it needs `useSearchParams()`/`useRouter()`) and this
+ * layout is the nearest Server Component with access to `db` and the current user —
+ * same reasoning as `defaultEntityId` already being fetched here instead of there.
+ *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const token = cookies().get(SESSION_COOKIE_NAME)?.value;
   const currentUser = await getCurrentUserFromToken(token).catch(() => null);
+
+  const entities = currentUser
+    ? await db.entity.findMany({
+        where: { access: { some: { userId: currentUser.id } } },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
 
   return (
     <html lang="en">
@@ -48,7 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         {currentUser && (
           <Suspense fallback={null}>
-            <NavBar userEmail={currentUser.email} defaultEntityId={currentUser.defaultEntityId} />
+            <NavBar userEmail={currentUser.email} defaultEntityId={currentUser.defaultEntityId} entities={entities} />
           </Suspense>
         )}
         {children}

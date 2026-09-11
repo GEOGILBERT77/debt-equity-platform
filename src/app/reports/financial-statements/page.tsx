@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, JournalEntry as DomainJournalEntry } from "@/lib/accounting/types";
 import { buildAccountRollForward, buildStockCompDisclosure, StockCompInstrumentInput } from "@/lib/accounting/reporting";
-import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
 
 /**
@@ -11,6 +12,11 @@ import { theme } from "@/lib/theme";
  * scope note (notably: stock-settled SAR is deliberately excluded from the ASC 718
  * disclosure table, and everything here reads only closed/reported rows, never a live
  * recomputation).
+ *
+ * v0.36.0: added the default-entity redirect every other entity-scoped page has had
+ * since v0.21.0 — this page predates that convention and was never updated when it was
+ * introduced. See audit-trail/page.tsx's doc comment for the same fix, caught the same
+ * way (user report).
  *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
@@ -21,10 +27,18 @@ export default async function FinancialStatementsPage({
 }) {
   const entityId = searchParams.entityId;
   if (!entityId) {
+    const user = await requireCurrentUser();
+    if (user.defaultEntityId) {
+      const params = new URLSearchParams({ entityId: user.defaultEntityId });
+      if (searchParams.periodStart) params.set("periodStart", searchParams.periodStart);
+      if (searchParams.periodEnd) params.set("periodEnd", searchParams.periodEnd);
+      redirect(`/reports/financial-statements?${params.toString()}`);
+    }
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
-          Pass <code>?entityId=...</code> to view this report, or go to <Link href="/">the entity list</Link>.
+          Pass <code>?entityId=...</code> to view this report, or go to <Link href="/">the entity list</Link> (or
+          set a default entity there).
         </p>
       </main>
     );

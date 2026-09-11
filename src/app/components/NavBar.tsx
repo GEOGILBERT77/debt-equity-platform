@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { LogoutButton } from "@/app/components/LogoutButton";
 import { theme } from "@/lib/theme";
@@ -44,6 +44,34 @@ import { theme } from "@/lib/theme";
  * Also absorbs what used to be a separate, second thin bar in layout.tsx (the
  * logged-in user's email + a sign-out button) into this same row's right side, via
  * the optional `userEmail` prop — one header instead of two stacked ones.
+ *
+ * ENTITY SWITCHER (v0.36.0): before this, the ONLY way to change which entity you were
+ * looking at was to go back to the home page's entity list and click into a different
+ * one's cap table — every other page just read whatever `?entityId=` was already in
+ * the URL (or the default entity), with no in-page way to change it. Reported
+ * directly: "having to navigate everything through the entity on the landing page
+ * doesn't work" — a few entity-scoped pages were ALSO separately found to be missing
+ * even the existing default-entity fallback (see audit-trail/page.tsx,
+ * financial-statements/page.tsx, stakeholders/new/page.tsx), but that was a narrower
+ * bug fix; this is the actual feature request. The fix: a `<select>` right in this bar
+ * (`entities`, fetched once in layout.tsx alongside `defaultEntityId` — see that
+ * file's doc comment), defaulting to whichever entity is currently active
+ * (`entityId`, same resolution as everywhere else in this file). Picking a different
+ * one navigates to THAT entity's cap table — deliberately always the cap table,
+ * never "the same page you're on, for a different entity": several pages here are
+ * either a single specific record (an instrument, a stakeholder) that belongs to
+ * exactly one entity already, or carry page-specific query params (a report's date
+ * range) that may not carry over sensibly, and guessing at a per-page rewrite for
+ * every route risks landing on a broken or nonsensical URL. The cap table is this
+ * app's established "entity home" (see captable/page.tsx and stakeholders/[id]/
+ * page.tsx's own doc comments) — going there and then continuing to browse from its
+ * links (which already all carry `?entityId=` forward via `withEntityId` below) is
+ * one predictable click away from anywhere.
+ *
+ * DELIBERATELY DOES NOT change `defaultEntityId` — switching entities here is a
+ * per-visit navigation action, not a change to what you land on next time you log in.
+ * That stays a separate, deliberate choice via the "Set as default" button on the
+ * home page (SetDefaultEntityButton.tsx).
  *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
@@ -111,8 +139,17 @@ function withEntityId(href: string, entityId: string | null): string {
   return `${href}${href.includes("?") ? "&" : "?"}entityId=${entityId}`;
 }
 
-export function NavBar({ userEmail, defaultEntityId }: { userEmail?: string; defaultEntityId?: string | null }) {
+export function NavBar({
+  userEmail,
+  defaultEntityId,
+  entities,
+}: {
+  userEmail?: string;
+  defaultEntityId?: string | null;
+  entities?: { id: string; name: string }[];
+}) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   // Falls back to the user's default entity ONLY when the URL has no entityId at all —
   // see the DEFAULT ENTITY note above. An entityId already in the URL always wins.
   const entityId = searchParams.get("entityId") ?? defaultEntityId ?? null;
@@ -146,6 +183,29 @@ export function NavBar({ userEmail, defaultEntityId }: { userEmail?: string; def
       <Link href="/" style={navLinkStyle} onClick={() => setOpenMenu(null)}>
         Home
       </Link>
+
+      {entities && entities.length > 0 && (
+        <select
+          aria-label="Switch entity"
+          value={entities.some((e) => e.id === entityId) ? (entityId as string) : ""}
+          onChange={(e) => {
+            const nextEntityId = e.target.value;
+            if (nextEntityId) router.push(`/captable?entityId=${nextEntityId}`);
+          }}
+          style={entitySwitcherStyle}
+        >
+          {!entities.some((e) => e.id === entityId) && (
+            <option value="" disabled>
+              Select an entity…
+            </option>
+          )}
+          {entities.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.name}
+            </option>
+          ))}
+        </select>
+      )}
 
       <div style={{ position: "relative" }}>
         <button
@@ -276,6 +336,26 @@ const navLinkStyle: React.CSSProperties = {
   color: theme.onPrimary,
   textDecoration: "none",
   whiteSpace: "nowrap",
+};
+
+// The entity switcher (v0.36.0) — a native <select> rather than the custom dropdown
+// pattern used for "New transactions"/"GAAP reports" above, since a <select> already
+// gives free keyboard support and a familiar affordance for "pick one of these", and
+// there's no need for the multi-column grouped layout those two custom dropdowns have.
+// Sits on the same theme.primary bar, so — like navLinkStyle/navButtonStyle — it uses
+// the translucent-white/onPrimary tokens rather than the light-background ink/border
+// tokens the rest of the app (including the dropdown PANELS below) uses.
+const entitySwitcherStyle: React.CSSProperties = {
+  margin: "0 0.4rem",
+  padding: "0.4rem 0.6rem",
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.3)",
+  borderRadius: 6,
+  color: theme.onPrimary,
+  font: "inherit",
+  fontSize: "0.85rem",
+  cursor: "pointer",
+  maxWidth: 200,
 };
 
 function navButtonStyle(active: boolean): React.CSSProperties {

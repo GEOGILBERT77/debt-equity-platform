@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { buildAuditTrail, summarizeAttributionCoverage, AuditTrailInput } from "@/lib/accounting/auditTrail";
-import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
 
 /**
@@ -11,15 +12,25 @@ import { theme } from "@/lib/theme";
  * honest limitation (partial "who," for rows recorded before createdByUserId existed).
  * Requires EDITOR — same reasoning as the API route.
  *
+ * v0.36.0: added the same "fall back to the user's default entity before showing the
+ * 'pass ?entityId=...' message" redirect every other entity-scoped page has had since
+ * v0.21.0 (see instruments/new/page.tsx's doc comment for the original reasoning) —
+ * this page predates that convention (v0.19.0) and was simply never updated when it
+ * was introduced. Caught via user report, not something this sandbox could verify on
+ * its own.
+ *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 export default async function AuditTrailPage({ searchParams }: { searchParams: { entityId?: string } }) {
   const entityId = searchParams.entityId;
   if (!entityId) {
+    const user = await requireCurrentUser();
+    if (user.defaultEntityId) redirect(`/reports/audit-trail?entityId=${user.defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
-          Pass <code>?entityId=...</code> to view this report, or go to <Link href="/">the entity list</Link>.
+          Pass <code>?entityId=...</code> to view this report, or go to <Link href="/">the entity list</Link> (or
+          set a default entity there).
         </p>
       </main>
     );

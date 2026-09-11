@@ -1,99 +1,38 @@
-"use client";
-
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { redirect } from "next/navigation";
+import { requireCurrentUser } from "@/lib/auth/pageGuard";
+import { NewStakeholderForm } from "@/app/components/NewStakeholderForm";
 import { theme } from "@/lib/theme";
 
-const STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR", "ENTITY_HOLDER"] as const;
-
-/** Adds an investor, debt holder, employee, or advisor to an entity — see
- * src/app/api/entities/[id]/stakeholders/route.ts. Requires ?entityId=... since a
- * stakeholder always belongs to exactly one entity. */
-export default function NewStakeholderPage() {
-  const router = useRouter();
-  const entityId = useSearchParams().get("entityId");
-
-  const [name, setName] = useState("");
-  const [type, setType] = useState<(typeof STAKEHOLDER_TYPES)[number]>("INVESTOR");
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [message, setMessage] = useState<string | null>(null);
-
+/**
+ * Server component wrapper for NewStakeholderForm.tsx (v0.36.0) — this page used to be
+ * a single client component that read `?entityId=` via `useSearchParams()` directly
+ * and had no fallback when it was missing. Split out so it could pick up the same
+ * "fall back to the user's default entity before showing the 'pass ?entityId=...'
+ * message" redirect every other entity-scoped page has had since v0.21.0 (see
+ * instruments/new/page.tsx's doc comment for the original pattern) — a plain client
+ * component can't call the server-side `requireCurrentUser()` this needs, hence the
+ * wrapper. Caught via user report (several pages were missing this), not something
+ * this sandbox could verify on its own.
+ *
+ * Adds an investor, debt holder, employee, or advisor to an entity — see
+ * src/app/api/entities/[id]/stakeholders/route.ts. Requires ?entityId=... (or a
+ * default entity) since a stakeholder always belongs to exactly one entity.
+ */
+export default async function NewStakeholderPage({ searchParams }: { searchParams: { entityId?: string } }) {
+  const entityId = searchParams.entityId;
   if (!entityId) {
+    const user = await requireCurrentUser();
+    if (user.defaultEntityId) redirect(`/stakeholders/new?entityId=${user.defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
           Pass <code>?entityId=...</code>, or go to <Link href="/">the entity list</Link> and use "Add a
-          stakeholder" from a specific entity's cap table.
+          stakeholder" from a specific entity's cap table (or set a default entity there).
         </p>
       </main>
     );
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setStatus("loading");
-    setMessage(null);
-    try {
-      const res = await fetch(`/api/entities/${entityId}/stakeholders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type, email: email || undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setStatus("error");
-        setMessage(data.error ?? "Failed to create stakeholder");
-        return;
-      }
-      router.push(`/instruments/new?entityId=${entityId}&stakeholderId=${data.stakeholder.id}`);
-    } catch (err) {
-      setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Failed to create stakeholder");
-    }
-  }
-
-  return (
-    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 500 }}>
-      <p>
-        <Link href={`/captable?entityId=${entityId}`}>&larr; Cap table</Link>
-      </p>
-      <h1>New stakeholder</h1>
-      <form onSubmit={handleSubmit}>
-        <label style={labelStyle}>
-          Name
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required style={inputStyle} />
-        </label>
-        <label style={labelStyle}>
-          Type
-          <select value={type} onChange={(e) => setType(e.target.value as typeof type)} style={inputStyle}>
-            {STAKEHOLDER_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label style={labelStyle}>
-          Email (optional)
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} />
-        </label>
-        <button type="submit" disabled={status === "loading"} style={buttonStyle}>
-          {status === "loading" ? "Creating…" : "Create stakeholder, then add an instrument"}
-        </button>
-        {message && <p style={{ color: theme.danger.fg, marginTop: "0.5rem" }}>{message}</p>}
-      </form>
-    </main>
-  );
+  return <NewStakeholderForm entityId={entityId} />;
 }
-
-const buttonStyle: React.CSSProperties = {
-  padding: "0.5rem 1rem",
-  border: `1px solid ${theme.ink}`,
-  borderRadius: 4,
-  background: theme.surfaceAlt,
-  cursor: "pointer",
-};
-const labelStyle: React.CSSProperties = { display: "block", margin: "0.75rem 0", fontSize: "0.9rem" };
-const inputStyle: React.CSSProperties = { display: "block", width: "100%", padding: "0.4rem", marginTop: "0.25rem" };
