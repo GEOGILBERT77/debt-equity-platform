@@ -73,15 +73,28 @@ import { theme } from "@/lib/theme";
  * That stays a separate, deliberate choice via the "Set as default" button on the
  * home page (SetDefaultEntityButton.tsx).
  *
+ * STOCK AWARD CONSOLIDATION (v0.37.0): the "New transactions" menu's Equity column used
+ * to list "Stock option", "RSU", and "Restricted stock" as three separate entries, each
+ * landing on the same general-purpose new-instrument form pre-set to one type. Replaced
+ * with a single "Stock award" entry that opens StockAwardWizard.tsx — pick the award
+ * type (NQ option, ISO option, RSU, or restricted stock) there, then manual entry or
+ * bulk upload — since those three were, in practice, one decision tree split across
+ * three redundant-feeling screens. SAR/Warrant/Common/Preferred don't have that overlap
+ * and keep their own direct links.
+ *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 
 type InstrumentTypeLink = { label: string; type: string };
 
+// v0.37.0 — STOCK_OPTION, RSU, and RESTRICTED_STOCK used to each get their own entry
+// here, all three landing on the same general-purpose NewInstrumentForm pre-set to one
+// type. Replaced by a single "Stock award" entry (rendered separately, above this
+// list — see the dropdown JSX below) that opens StockAwardWizard.tsx instead: pick the
+// award type there (NQ/ISO option, RSU, or restricted stock), then manual entry or
+// bulk upload. The remaining four types here don't share that overlapping "which of
+// these three near-identical screens do I want" problem, so they keep direct links.
 const EQUITY_INSTRUMENT_TYPES: InstrumentTypeLink[] = [
-  { label: "Stock option", type: "STOCK_OPTION" },
-  { label: "RSU", type: "RSU" },
-  { label: "Restricted stock", type: "RESTRICTED_STOCK" },
   { label: "Stock appreciation right (SAR)", type: "SAR" },
   { label: "Warrant", type: "WARRANT" },
   { label: "Common stock", type: "COMMON_STOCK" },
@@ -220,6 +233,13 @@ export function NavBar({
             <div style={dropdownColumnsStyle}>
               <div>
                 <div style={groupHeadingStyle}>Equity</div>
+                <Link
+                  href={withEntityId("/instruments/new/stock-award", entityId)}
+                  style={{ ...dropdownItemStyle, fontWeight: 600 }}
+                  onClick={() => setOpenMenu(null)}
+                >
+                  Stock award (option, RSU, restricted stock)
+                </Link>
                 {EQUITY_INSTRUMENT_TYPES.map((t) => (
                   <Link
                     key={t.type}
@@ -235,7 +255,7 @@ export function NavBar({
                   style={{ ...dropdownItemStyle, borderTop: `1px solid ${theme.border}`, marginTop: "0.25rem", paddingTop: "0.5rem" }}
                   onClick={() => setOpenMenu(null)}
                 >
-                  Bulk upload grants (Excel)
+                  Bulk upload stock awards (Excel)
                 </Link>
               </div>
               <div>

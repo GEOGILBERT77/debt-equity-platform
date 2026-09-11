@@ -118,14 +118,24 @@ export function ServiceConditionGrantForm({
 
 export interface StockOptionGrantState extends ServiceConditionGrantState {
   strikePrice: string;
+  /** v0.37.0 — was a real, silent gap: `termsValidation.ts` and the engine (see
+   * dispatch.ts's StockOptionServiceConditionTerms) have supported this field since
+   * v0.33.0 (it drives Form 3921 / iso-100k / rule-701 eligibility — see
+   * optionTaxCompliance.ts), but no guided form ever exposed a control for it, so the
+   * only way to grant an ISO through this form was "Edit as raw JSON instead" and
+   * adding the key by hand. Found while building the consolidated "Stock award" wizard
+   * (see StockAwardWizard.tsx), which needed a real NQ-vs-ISO choice to hand off to
+   * this field. Defaults to false (NQ/NSO) — unchanged behavior for every existing
+   * grant that never set it. */
+  isIncentiveStockOption: boolean;
 }
 
 export function defaultStockOptionGrantState(): StockOptionGrantState {
-  return { ...defaultServiceConditionGrantState(), strikePrice: "9.45" };
+  return { ...defaultServiceConditionGrantState(), strikePrice: "9.45", isIncentiveStockOption: false };
 }
 
 export function toStockOptionGrantTerms(s: StockOptionGrantState) {
-  return { ...toServiceConditionGrantTerms(s), strikePrice: s.strikePrice };
+  return { ...toServiceConditionGrantTerms(s), strikePrice: s.strikePrice, isIncentiveStockOption: s.isIncentiveStockOption };
 }
 
 export function StockOptionGrantForm({
@@ -142,8 +152,19 @@ export function StockOptionGrantForm({
         label="Strike price"
         value={value.strikePrice}
         onChange={(v) => onChange({ ...value, strikePrice: v })}
-        hint="Disclosure only — not used by the expense schedule, which depends only on grant-date fair value. Maintained here so it shows up on the Grants report."
+        hint="Disclosure only — not used by the expense schedule, which depends only on grant-date fair value. Required (a real exercise price, not a placeholder) whenever the ISO box below is checked, since Form 3921 needs it."
       />
+      <BoolField
+        label="Incentive stock option (ISO)"
+        value={value.isIncentiveStockOption}
+        onChange={(v) => onChange({ ...value, isIncentiveStockOption: v })}
+      />
+      <p style={hintStyle}>
+        Leave unchecked for a nonqualified/nonstatutory option (NQ/NSO). Check this only for a grant that actually
+        meets IRC 422's ISO requirements — it drives Form 3921 reporting, the IRC 422(d) $100k limit, and Rule 701
+        eligibility elsewhere in this app. This platform doesn't verify ISO eligibility (10% owner limits, the
+        $100k rule at grant time, plan/shareholder approval, etc.) — that's still on you.
+      </p>
     </>
   );
 }
@@ -161,6 +182,11 @@ export interface MarketConditionGrantState {
   grantDateFairValuePerUnit: string;
   strikePrice: string;
   derivedServiceEndDate: string;
+  /** v0.37.0 — see StockOptionGrantState.isIncentiveStockOption's doc comment: the
+   * same real gap (dispatch.ts's StockOptionMarketConditionTerms has supported this
+   * since v0.33.0; no guided form ever exposed it), fixed here too rather than only on
+   * the service-condition form it was first reported against. */
+  isIncentiveStockOption: boolean;
 }
 
 export function defaultMarketConditionGrantState(): MarketConditionGrantState {
@@ -170,6 +196,7 @@ export function defaultMarketConditionGrantState(): MarketConditionGrantState {
     grantDateFairValuePerUnit: "3.50",
     strikePrice: "9.45",
     derivedServiceEndDate: "2032-01-01",
+    isIncentiveStockOption: false,
   };
 }
 
@@ -181,6 +208,7 @@ export function toMarketConditionGrantTerms(s: MarketConditionGrantState) {
     grantDateFairValuePerUnit: s.grantDateFairValuePerUnit,
     strikePrice: s.strikePrice,
     derivedServiceEndDate: s.derivedServiceEndDate,
+    isIncentiveStockOption: s.isIncentiveStockOption,
   };
 }
 
@@ -210,7 +238,7 @@ export function MarketConditionGrantForm({
         label="Strike price"
         value={value.strikePrice}
         onChange={(v) => onChange({ ...value, strikePrice: v })}
-        hint="Disclosure only — not used by the expense schedule."
+        hint="Disclosure only — not used by the expense schedule. Required whenever the ISO box below is checked."
       />
       <DateField
         label="Derived service period end date"
@@ -218,6 +246,15 @@ export function MarketConditionGrantForm({
         onChange={(v) => onChange({ ...value, derivedServiceEndDate: v })}
         hint="From the same valuation model — not necessarily the award's stated contractual term."
       />
+      <BoolField
+        label="Incentive stock option (ISO)"
+        value={value.isIncentiveStockOption}
+        onChange={(v) => onChange({ ...value, isIncentiveStockOption: v })}
+      />
+      <p style={hintStyle}>
+        Leave unchecked for a nonqualified option (NQ/NSO). See the service-condition form's ISO hint for what
+        checking this drives elsewhere in the app — same field, same caveats, market-condition awards can be ISOs too.
+      </p>
     </>
   );
 }
@@ -244,6 +281,10 @@ export interface PerformanceConditionGrantState {
    * module comment for why this is auto-generated (all "probable") rather than
    * hand-edited row by row. */
   probabilityAssessments: { date: string; probable: boolean }[];
+  /** v0.37.0 — see StockOptionGrantState.isIncentiveStockOption's doc comment: the
+   * same real gap (dispatch.ts's StockOptionPerformanceConditionTerms has supported
+   * this since v0.33.0; no guided form ever exposed it), fixed here too. */
+  isIncentiveStockOption: boolean;
 }
 
 export function defaultPerformanceConditionGrantState(): PerformanceConditionGrantState {
@@ -254,6 +295,7 @@ export function defaultPerformanceConditionGrantState(): PerformanceConditionGra
     strikePrice: "9.45",
     requisiteServiceEndDate: "2032-01-01",
     probabilityAssessments: [],
+    isIncentiveStockOption: false,
   };
 }
 
@@ -266,6 +308,7 @@ export function toPerformanceConditionGrantTerms(s: PerformanceConditionGrantSta
     strikePrice: s.strikePrice,
     requisiteServiceEndDate: s.requisiteServiceEndDate,
     probabilityAssessments: s.probabilityAssessments,
+    isIncentiveStockOption: s.isIncentiveStockOption,
   };
 }
 
@@ -332,6 +375,16 @@ export function PerformanceConditionGrantForm({
         probable. Set above to auto-fill every month as probable (the ordinary case — produces a plain straight-line
         schedule). To record a change in assessment later, use &quot;Modify terms&quot; on the instrument&apos;s own
         page, or &quot;Edit as raw JSON instead&quot; below for a scenario needing per-month control now.
+      </p>
+      <BoolField
+        label="Incentive stock option (ISO)"
+        value={value.isIncentiveStockOption}
+        onChange={(v) => onChange({ ...value, isIncentiveStockOption: v })}
+      />
+      <p style={hintStyle}>
+        Leave unchecked for a nonqualified option (NQ/NSO). See the service-condition form's ISO hint for what
+        checking this drives elsewhere in the app — same field, same caveats, performance-condition awards can be
+        ISOs too.
       </p>
     </>
   );
