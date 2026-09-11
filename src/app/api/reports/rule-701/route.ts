@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   const grants: (Rule701Grant & { stakeholderName: string })[] = [];
   const skipped: { instrumentId: string; reason: string }[] = [];
   for (const inst of instruments) {
-    const terms = inst.termVersions[0]?.terms as ServiceConditionGrant | undefined;
+    const terms = inst.termVersions[0]?.terms as unknown as ServiceConditionGrant | undefined;
     if (!terms || terms.grantDate === undefined || terms.quantity === undefined || terms.grantDateFairValuePerUnit === undefined) {
       skipped.push({ instrumentId: inst.id, reason: "No term version with a complete grant date/quantity/fair value on file." });
       continue;

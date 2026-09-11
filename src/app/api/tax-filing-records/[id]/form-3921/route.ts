@@ -58,7 +58,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const isoGrantsWithTranches: IsoGrantWithTranches[] = [];
   const allocationInputExercises: ExerciseForIso100kAllocation[] = [];
   for (const inst of stakeholderInstruments) {
-    const terms = inst.termVersions[0]?.terms as StockOptionInstrumentTerms | undefined;
+    const terms = inst.termVersions[0]?.terms as unknown as StockOptionInstrumentTerms | undefined;
     if (!terms || !(terms as { isIncentiveStockOption?: boolean }).isIncentiveStockOption) continue;
     const conditionType = (terms as { conditionType?: string }).conditionType ?? "service";
     const tranches = (terms as { tranches?: { id: string; vestDate: string; quantity: unknown }[] }).tranches;
@@ -95,7 +95,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     orderBy: { effectiveDate: "desc" },
     select: { terms: true },
   });
-  const grantDate = (grantTerms?.terms as { grantDate?: string } | undefined)?.grantDate;
+  const grantDate = (grantTerms?.terms as unknown as { grantDate?: string } | undefined)?.grantDate;
   if (!grantDate) {
     return NextResponse.json({ error: "Could not determine this grant's date option granted — no term version on file." }, { status: 409 });
   }

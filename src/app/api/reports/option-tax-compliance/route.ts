@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
       }
 
       // STOCK_OPTION
-      const latestTerms = inst.termVersions[0]?.terms as StockOptionInstrumentTerms | undefined;
+      const latestTerms = inst.termVersions[0]?.terms as unknown as StockOptionInstrumentTerms | undefined;
       if (!latestTerms || inst.exerciseEvents.length === 0) continue;
 
       const isIncentiveStockOption = Boolean((latestTerms as { isIncentiveStockOption?: boolean }).isIncentiveStockOption);

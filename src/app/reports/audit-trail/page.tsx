@@ -58,7 +58,7 @@ export default async function AuditTrailPage({ searchParams }: { searchParams: {
     });
   }
   for (const c of corrections) {
-    const snapshot = c.previewSnapshot as { cumulativeDelta?: string } | null;
+    const snapshot = c.previewSnapshot as unknown as { cumulativeDelta?: string } | null;
     inputs.push({
       kind: "CORRECTION",
       instrumentId: c.instrumentId,
