@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { NewStakeholderForm } from "@/app/components/NewStakeholderForm";
 import { theme } from "@/lib/theme";
 
@@ -23,7 +23,8 @@ export default async function NewStakeholderPage({ searchParams }: { searchParam
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/stakeholders/new?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/stakeholders/new?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

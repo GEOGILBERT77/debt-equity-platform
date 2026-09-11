@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { theme } from "@/lib/theme";
 import { getGrantsReport } from "@/lib/db/grantsReport";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 
 /**
  * Grants report — "the strike price needs to be maintained... as part of a grants
@@ -23,7 +23,8 @@ export default async function GrantsReportPage({ searchParams }: { searchParams:
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/reports/grants?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/reports/grants?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

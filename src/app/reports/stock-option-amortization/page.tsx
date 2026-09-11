@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { ApproveAllAmortizationSchedulesButton } from "@/app/components/ApproveAllAmortizationSchedulesButton";
 import { theme } from "@/lib/theme";
 
@@ -37,7 +37,8 @@ export default async function StockOptionAmortizationReportPage({
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/reports/stock-option-amortization?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/reports/stock-option-amortization?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

@@ -4,7 +4,7 @@ import { theme } from "@/lib/theme";
 import { db } from "@/lib/db";
 import { summarizeByAccount, checkReconciliation } from "@/lib/accounting/reporting";
 import { money, JournalEntry as DomainJournalEntry } from "@/lib/accounting/types";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 
 /**
  * Journal entries report — the front-end counterpart to GET /api/reports/journal-
@@ -24,7 +24,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: { en
     // v0.21.0 — fall back to the user's default entity before showing the "pass
     // ?entityId=..." message, same reasoning as instruments/new/page.tsx.
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/reports?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/reports?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

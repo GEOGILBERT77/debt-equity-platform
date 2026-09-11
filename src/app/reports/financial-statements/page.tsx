@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, JournalEntry as DomainJournalEntry } from "@/lib/accounting/types";
 import { buildAccountRollForward, buildStockCompDisclosure, StockCompInstrumentInput } from "@/lib/accounting/reporting";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
 
 /**
@@ -28,8 +28,9 @@ export default async function FinancialStatementsPage({
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) {
-      const params = new URLSearchParams({ entityId: user.defaultEntityId });
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) {
+      const params = new URLSearchParams({ entityId: defaultEntityId });
       if (searchParams.periodStart) params.set("periodStart", searchParams.periodStart);
       if (searchParams.periodEnd) params.set("periodEnd", searchParams.periodEnd);
       redirect(`/reports/financial-statements?${params.toString()}`);

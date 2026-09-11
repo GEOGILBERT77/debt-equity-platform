@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { theme } from "@/lib/theme";
 import { BulkUploadStockOptionsForm } from "@/app/components/BulkUploadStockOptionsForm";
 import { isServiceConditionType, SERVICE_CONDITION_TYPES, ServiceConditionType } from "@/lib/db/bulkUploadServiceConditionGrants";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 
 const LABELS: Record<ServiceConditionType, string> = {
   STOCK_OPTION: "stock option",
@@ -37,7 +37,8 @@ export default async function BulkUploadPage({
 
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/instruments/bulk-upload?entityId=${user.defaultEntityId}&type=${type}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/instruments/bulk-upload?entityId=${defaultEntityId}&type=${type}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

@@ -35,6 +35,17 @@ export const metadata = {
  * layout is the nearest Server Component with access to `db` and the current user —
  * same reasoning as `defaultEntityId` already being fetched here instead of there.
  *
+ * SOLE-ENTITY DEFAULT (v0.37.0): NavBar's own `?entityId=`-less fallback (see its
+ * `withEntityId` note) used `currentUser.defaultEntityId` directly — the real database
+ * column, unset until someone clicks "Set as default" — so a user who never did that
+ * got sent to un-scoped destinations even with only one entity to possibly mean.
+ * Reported directly: "most users will only have one entity, so the system should
+ * default to it." Since this component already has the full `entities` list in hand,
+ * it computes the same fallback `resolveDefaultEntityId` (pageGuard.ts) uses for every
+ * page-level redirect — explicit default first, else the sole entity if there's
+ * exactly one — inline here rather than an extra query, and passes THAT to NavBar
+ * instead of the raw column.
+ *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -48,6 +59,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         orderBy: { name: "asc" },
       })
     : [];
+
+  // See the SOLE-ENTITY DEFAULT doc comment above — mirrors resolveDefaultEntityId's
+  // logic (pageGuard.ts) using the `entities` list already fetched above.
+  const effectiveDefaultEntityId = currentUser?.defaultEntityId ?? (entities.length === 1 ? entities[0].id : null);
 
   return (
     <html lang="en">
@@ -66,7 +81,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         {currentUser && (
           <Suspense fallback={null}>
-            <NavBar userEmail={currentUser.email} defaultEntityId={currentUser.defaultEntityId} entities={entities} />
+            <NavBar userEmail={currentUser.email} defaultEntityId={effectiveDefaultEntityId} entities={entities} />
           </Suspense>
         )}
         {children}

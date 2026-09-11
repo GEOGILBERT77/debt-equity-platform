@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { NewInstrumentForm } from "@/app/components/NewInstrumentForm";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
 
 /**
@@ -28,8 +28,9 @@ export default async function NewInstrumentPage({
   let entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) {
-      const params = new URLSearchParams({ entityId: user.defaultEntityId });
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) {
+      const params = new URLSearchParams({ entityId: defaultEntityId });
       if (searchParams.stakeholderId) params.set("stakeholderId", searchParams.stakeholderId);
       if (searchParams.type) params.set("type", searchParams.type);
       redirect(`/instruments/new?${params.toString()}`);

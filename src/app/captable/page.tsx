@@ -4,7 +4,7 @@ import { theme } from "@/lib/theme";
 import { db } from "@/lib/db";
 import { computeVisibleSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { buildCapTableRollup, aggregateByStakeholder, CapTableInstrumentInput } from "@/lib/accounting/capTable";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { StakeholderRowActions } from "@/app/components/StakeholderRowActions";
 import { CloseAllInstrumentsButton } from "@/app/components/CloseAllInstrumentsButton";
 
@@ -37,7 +37,8 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
     // v0.21.0 — fall back to the user's default entity before showing the "pass
     // ?entityId=..." message, same reasoning as instruments/new/page.tsx.
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/captable?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/captable?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

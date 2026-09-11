@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getModificationAuditReport } from "@/lib/db/modificationAudit";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
 
 /**
@@ -31,8 +31,9 @@ export default async function ModificationAuditPage({
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) {
-      const params = new URLSearchParams({ entityId: user.defaultEntityId });
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) {
+      const params = new URLSearchParams({ entityId: defaultEntityId });
       if (searchParams.from) params.set("from", searchParams.from);
       if (searchParams.to) params.set("to", searchParams.to);
       redirect(`/reports/modification-audit?${params.toString()}`);

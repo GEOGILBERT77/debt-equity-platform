@@ -6,7 +6,7 @@ import { CapTableInstrumentInput } from "@/lib/accounting/capTable";
 import { buildWaterfallClassesFromCapTable } from "@/lib/accounting/capTableWaterfall";
 import { buildWaterfallSensitivity, findWaterfallBreakpoints } from "@/lib/accounting/waterfallAnalysis";
 import { Decimal } from "@/lib/accounting/types";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import CapTableWaterfallCalculator, { WaterfallClassSummary } from "@/app/components/CapTableWaterfallCalculator";
 import WaterfallBreakpoints from "@/app/components/WaterfallBreakpoints";
 import WaterfallSensitivityAnalysis from "@/app/components/WaterfallSensitivityAnalysis";
@@ -60,7 +60,8 @@ export default async function CapTableWaterfallPage({ searchParams }: { searchPa
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/reports/cap-table-waterfall?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/reports/cap-table-waterfall?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

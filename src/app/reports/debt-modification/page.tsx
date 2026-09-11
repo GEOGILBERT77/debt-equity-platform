@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { runDebtModificationTest, ModificationCashFlow } from "@/lib/accounting/debtModification";
 import { TermDebtInputs } from "@/lib/accounting/debtAmortization";
 import { money } from "@/lib/accounting/types";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
 
 /**
@@ -55,7 +55,8 @@ export default async function DebtModificationReportPage({
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/reports/debt-modification?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/reports/debt-modification?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>

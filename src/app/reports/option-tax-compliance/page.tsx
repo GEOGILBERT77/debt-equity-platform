@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { theme } from "@/lib/theme";
 import { db } from "@/lib/db";
-import { requirePageEntityAccess, requireCurrentUser } from "@/lib/auth/pageGuard";
+import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import OptionTaxComplianceReport, { InstrumentOption } from "@/app/components/OptionTaxComplianceReport";
 import EntityTaxSetupForm from "@/app/components/EntityTaxSetupForm";
 
@@ -31,7 +31,8 @@ export default async function OptionTaxCompliancePage({ searchParams }: { search
   const entityId = searchParams.entityId;
   if (!entityId) {
     const user = await requireCurrentUser();
-    if (user.defaultEntityId) redirect(`/reports/option-tax-compliance?entityId=${user.defaultEntityId}`);
+    const defaultEntityId = await resolveDefaultEntityId(user);
+    if (defaultEntityId) redirect(`/reports/option-tax-compliance?entityId=${defaultEntityId}`);
     return (
       <main style={{ fontFamily: theme.font.body, padding: "2rem" }}>
         <p>
