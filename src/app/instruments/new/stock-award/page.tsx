@@ -27,6 +27,12 @@ import { theme } from "@/lib/theme";
  * its own entities list right here (same query the home page and layout.tsx's entity
  * switcher use) and renders it as clickable links — so landing here with no context
  * costs one extra click, not a trip back to the home page.
+ *
+ * v0.38.0 — the "← Cap table · Add a stakeholder instead · All instrument types" nav
+ * row and the page's own `<h1>` (both formerly rendered here, once entityId resolves)
+ * were removed at George's request. The `<h1>` moved into StockAwardWizard.tsx itself,
+ * since it now needs to change per award type once one's picked — a server component
+ * can't react to that client-side selection.
  */
 export default async function NewStockAwardPage({
   searchParams,
@@ -89,12 +95,6 @@ export default async function NewStockAwardPage({
 
   return (
     <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 640 }}>
-      <p>
-        <Link href={`/captable?entityId=${entityId}`}>&larr; Cap table</Link> {" · "}
-        <Link href={`/stakeholders/new?entityId=${entityId}`}>Add a stakeholder instead</Link> {" · "}
-        <Link href={`/instruments/new?entityId=${entityId}`}>All instrument types</Link>
-      </p>
-      <h1>New stock award</h1>
       <StockAwardWizard
         entityId={entityId}
         stakeholders={stakeholders.map((s) => ({ id: s.id, name: s.name, type: s.type }))}

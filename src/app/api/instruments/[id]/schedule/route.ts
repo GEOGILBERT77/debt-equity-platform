@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { computeVisibleSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
+import { attachPerformanceConditionAssessments } from "@/lib/db/performanceConditions";
 
 /**
  * GET /api/instruments/:id/schedule?through=YYYY-MM-DD
@@ -30,11 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     // computeScheduleForInstrument — see dispatch.ts's CORRECTNESS NOTE.
     const schedule = computeVisibleSchedule(
       instrument.type as InstrumentTypeForDispatch,
-      instrument.termVersions.map((v) => ({
-        effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-        label: v.label,
-        terms: v.terms,
-      })),
+      await attachPerformanceConditionAssessments(instrument.termVersions),
       through
     );
 

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { computeVisibleSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { computeCloseBatch } from "@/lib/accounting/closeService";
+import { attachPerformanceConditionAssessments } from "@/lib/db/performanceConditions";
 
 /**
  * The database-touching half of "closing" an instrument through a date — pulled out of
@@ -51,11 +52,7 @@ export async function closeInstrumentThrough(instrumentId: string, through: stri
     // same reasoning, as the original per-instrument route this was extracted from.
     fullSchedule = computeVisibleSchedule(
       instrument.type as InstrumentTypeForDispatch,
-      instrument.termVersions.map((v) => ({
-        effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-        label: v.label,
-        terms: v.terms,
-      })),
+      await attachPerformanceConditionAssessments(instrument.termVersions),
       through,
       alreadyClosedThroughPeriodEnd ? [alreadyClosedThroughPeriodEnd] : []
     );

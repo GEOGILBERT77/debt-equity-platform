@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const { entityId, stakeholderId, type, issueDate, terms, label } = body ?? {};
+  const { entityId, stakeholderId, type, issueDate, terms, label, performanceConditionId } = body ?? {};
 
   if (!entityId || !stakeholderId || !type || !issueDate || terms === undefined) {
     return NextResponse.json(
@@ -118,6 +118,23 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
+  // v0.38.0 — optional link to a shared PerformanceCondition (see that model's doc
+  // comment in prisma/schema.prisma). Only meaningful for a STOCK_OPTION grant whose
+  // terms.conditionType is "performance" — nothing here enforces that coupling (same
+  // "terms is untyped JSON, not schema-checked against the DB" posture as `terms`
+  // itself), so a mismatched pairing is silently ignored by the engine rather than
+  // rejected here. Must belong to THIS entity — same "don't silently accept a foreign
+  // record" posture as board-consents' instrumentIds check.
+  if (performanceConditionId !== undefined && performanceConditionId !== null) {
+    if (typeof performanceConditionId !== "string") {
+      return NextResponse.json({ error: "performanceConditionId must be a string if provided" }, { status: 400 });
+    }
+    const condition = await db.performanceCondition.findFirst({ where: { id: performanceConditionId, entityId } });
+    if (!condition) {
+      return NextResponse.json({ error: `No performance condition found with id "${performanceConditionId}" on this entity` }, { status: 400 });
+    }
+  }
+
   const instrument = await db.instrument.create({
     data: {
       entityId,
@@ -129,7 +146,15 @@ export async function POST(req: NextRequest) {
         // prisma/schema.prisma's doc comment on this column) — `access.user.id` is
         // always available here since requireApiEntityAccess above already resolved
         // and returned the current user.
-        create: [{ effectiveDate: new Date(issueDate), label: label ?? "Original terms", terms, createdByUserId: access.user.id }],
+        create: [
+          {
+            effectiveDate: new Date(issueDate),
+            label: label ?? "Original terms",
+            terms,
+            createdByUserId: access.user.id,
+            performanceConditionId: performanceConditionId ?? undefined,
+          },
+        ],
       },
     },
     include: { termVersions: true },

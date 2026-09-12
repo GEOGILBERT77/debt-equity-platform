@@ -1,6 +1,7 @@
 import { ScheduleRow, JournalEntry, DecimalValue, ISODate } from "./types.js";
 import { Period, buildAnnualPeriods, buildCalendarMonthlyPeriods } from "./dateMath.js";
-import { InstrumentTimeline, recomputeSchedule } from "./modificationEngine.js";
+import { InstrumentTimeline, recomputeSchedule, groupPeriodsByVersion } from "./modificationEngine.js";
+import { resolvePerformanceConditionProbabilities, PerformanceConditionAssessmentInput } from "./performanceConditions.js";
 import {
   buildServiceConditionSchedule,
   buildPerformanceConditionSchedule,
@@ -106,6 +107,19 @@ export interface TermVersionRecord {
   effectiveDate: string; // ISODate
   label: string;
   terms: unknown;
+  /** v0.38.0 — set by the DB-aware layer (see src/lib/db/performanceConditions.ts's
+   * `attachPerformanceConditionAssessments`) when THIS term version is linked to a
+   * shared PerformanceCondition (InstrumentTermVersion.performanceConditionId) rather
+   * than relying solely on its own terms' inline `probabilityAssessments`. When
+   * present, `computeScheduleForInstrument` below overwrites this version's
+   * `terms.probabilityAssessments` with the positional array resolved from this dated
+   * history (via `resolvePerformanceConditionProbabilities`) before dispatching to
+   * `getScheduleBuilder` — so a version linked to a shared condition ignores whatever
+   * its own `terms.probabilityAssessments` says, and a version with this left
+   * undefined (every service/market-condition grant, and every performance-condition
+   * grant that hasn't opted into shared-condition tracking) is completely untouched.
+   * See PerformanceCondition's doc comment in prisma/schema.prisma for the full design. */
+  performanceConditionAssessments?: PerformanceConditionAssessmentInput[];
 }
 
 /**
@@ -474,6 +488,45 @@ export function getScheduleBuilder(type: InstrumentTypeForDispatch): (terms: unk
   }
 }
 
+/**
+ * v0.38.0 — resolves any term version linked to a shared PerformanceCondition (see
+ * TermVersionRecord.performanceConditionAssessments's doc comment) into a version whose
+ * `terms.probabilityAssessments` is the positional per-period array the existing
+ * STOCK_OPTION performance-condition branch of `getScheduleBuilder` already knows how
+ * to read — computed against EXACTLY the periods that version will actually be
+ * scheduled over (via `groupPeriodsByVersion`, the same grouping `recomputeSchedule`
+ * itself uses), so a modification partway through a shared condition's life still gets
+ * each era's own correct slice of periods.
+ *
+ * Every term version with `performanceConditionAssessments` left undefined passes
+ * through with its `terms` object reference completely unchanged — this only touches
+ * versions that opted into shared-condition tracking.
+ *
+ * Exported (rather than kept private to `computeScheduleForInstrument`) so a caller
+ * that drives `getScheduleBuilder`/`recomputeSchedule` directly instead of going
+ * through `computeScheduleForInstrument` — currently only
+ * corrections/preview/route.ts, via `previewCorrection` in correctionService.ts — can
+ * apply the exact same enrichment to its own termVersions/periods before doing so.
+ */
+export function enrichTermVersionsWithPerformanceConditions(termVersions: TermVersionRecord[], periods: Period[]): TermVersionRecord[] {
+  if (!termVersions.some((v) => v.performanceConditionAssessments)) return termVersions;
+
+  const [first, ...rest] = termVersions;
+  const timeline = new InstrumentTimeline<TermVersionRecord>(first, first.effectiveDate, first.label);
+  for (const v of rest) timeline.applyModification(v, v.effectiveDate, v.label);
+  const groups = groupPeriodsByVersion(timeline, periods);
+
+  const resolved = new Map<TermVersionRecord, TermVersionRecord>();
+  for (const group of groups) {
+    const v = group.version.terms; // T = TermVersionRecord here, so "terms" IS the record
+    if (!v.performanceConditionAssessments) continue;
+    const probabilityAssessments = resolvePerformanceConditionProbabilities(v.performanceConditionAssessments, group.periods);
+    resolved.set(v, { ...v, terms: { ...(v.terms as object), probabilityAssessments } });
+  }
+
+  return termVersions.map((v) => resolved.get(v) ?? v);
+}
+
 export function computeScheduleForInstrument(
   type: InstrumentTypeForDispatch,
   termVersions: TermVersionRecord[],
@@ -482,7 +535,8 @@ export function computeScheduleForInstrument(
   if (termVersions.length === 0) {
     throw new Error("An instrument must have at least one term version to compute a schedule from");
   }
-  const [first, ...rest] = termVersions;
+  const enrichedTermVersions = enrichTermVersionsWithPerformanceConditions(termVersions, periods);
+  const [first, ...rest] = enrichedTermVersions;
   const builder = getScheduleBuilder(type);
 
   const timeline = new InstrumentTimeline<unknown>(first.terms, first.effectiveDate, first.label);

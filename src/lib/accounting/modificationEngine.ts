@@ -76,8 +76,14 @@ export class InstrumentTimeline<T> {
 }
 
 /** Splits `periods` into contiguous runs, one per term version that governs them,
- * based on each period's start date. */
-function groupPeriodsByVersion<T>(
+ * based on each period's start date. Exported (v0.38.0) so
+ * dispatch.ts's `enrichTermVersionsWithPerformanceConditions` can reuse the EXACT same
+ * grouping `recomputeSchedule` below uses, rather than re-deriving it — a shared
+ * PerformanceCondition's probability history has to be resolved against precisely the
+ * periods each term version will actually be scheduled over, and any drift between two
+ * separate implementations of "which periods does this version govern" would silently
+ * misalign the positional `probabilityAssessments` array by a period or more. */
+export function groupPeriodsByVersion<T>(
   timeline: InstrumentTimeline<T>,
   periods: Period[]
 ): { version: TermVersion<T>; periods: Period[] }[] {

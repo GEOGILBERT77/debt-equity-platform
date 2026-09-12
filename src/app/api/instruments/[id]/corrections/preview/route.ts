@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { previewCorrection } from "@/lib/accounting/correctionService";
-import { getScheduleBuilder, buildVisiblePeriods, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
+import { getScheduleBuilder, buildVisiblePeriods, enrichTermVersionsWithPerformanceConditions, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
+import { attachPerformanceConditionAssessments } from "@/lib/db/performanceConditions";
 
 /**
  * POST /api/instruments/:id/corrections/preview
@@ -52,11 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   try {
     const type = instrument.type as InstrumentTypeForDispatch;
-    const termVersions = instrument.termVersions.map((v) => ({
-      effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-      label: v.label,
-      terms: v.terms,
-    }));
+    const termVersions = await attachPerformanceConditionAssessments(instrument.termVersions);
     // buildVisiblePeriods (not a manually-truncated buildAnnualPeriods) — see
     // dispatch.ts's CORRECTNESS NOTE. previewCorrection compares the original and
     // corrected schedules only up through alreadyClosedThroughPeriodEnd, but the
@@ -68,9 +65,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const periods = buildVisiblePeriods(type, termVersions, through ?? new Date().toISOString().slice(0, 10), [
       alreadyClosedThroughPeriodEnd,
     ]);
+    // previewCorrection drives getScheduleBuilder directly (not through
+    // computeScheduleForInstrument), so any term version linked to a shared
+    // PerformanceCondition needs this same enrichment applied explicitly here — see
+    // enrichTermVersionsWithPerformanceConditions's doc comment.
+    const enrichedTermVersions = enrichTermVersionsWithPerformanceConditions(termVersions, periods);
     const builder = getScheduleBuilder(type);
     const preview = previewCorrection(
-      termVersions,
+      enrichedTermVersions,
       targetEffectiveDate,
       correctedTerms,
       periods,

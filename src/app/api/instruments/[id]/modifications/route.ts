@@ -38,7 +38,7 @@ import { approveAmortizationScheduleIfApplicable } from "@/lib/db/amortizationSc
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json().catch(() => ({}));
-  const { effectiveDate, label, terms } = body ?? {};
+  const { effectiveDate, label, terms, performanceConditionId } = body ?? {};
 
   if (!effectiveDate || !label || terms === undefined) {
     return NextResponse.json({ error: "effectiveDate, label, and terms are all required" }, { status: 400 });
@@ -51,6 +51,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const access = await requireApiEntityAccess(req, instrument.entityId, "EDITOR");
   if (access instanceof NextResponse) return access;
+
+  // v0.38.0 — same optional shared-PerformanceCondition link POST /api/instruments
+  // accepts on origination (see that route's doc comment); a modification can link
+  // this era to a (possibly different, or newly-created) condition just as freely.
+  if (performanceConditionId !== undefined && performanceConditionId !== null) {
+    if (typeof performanceConditionId !== "string") {
+      return NextResponse.json({ error: "performanceConditionId must be a string if provided" }, { status: 400 });
+    }
+    const condition = await db.performanceCondition.findFirst({ where: { id: performanceConditionId, entityId: instrument.entityId } });
+    if (!condition) {
+      return NextResponse.json({ error: `No performance condition found with id "${performanceConditionId}" on this entity` }, { status: 400 });
+    }
+  }
 
   try {
     validateInstrumentTerms(instrument.type as InstrumentTypeForDispatch, terms);
@@ -84,6 +97,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       terms,
       // v0.19.0 audit-trail attribution — see prisma/schema.prisma's doc comment.
       createdByUserId: access.user.id,
+      performanceConditionId: performanceConditionId ?? undefined,
     },
   });
 

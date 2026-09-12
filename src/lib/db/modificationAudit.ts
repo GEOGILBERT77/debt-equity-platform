@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { computeFullSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
+import { fetchPerformanceConditionAssessmentsByConditionIds, shapeTermVersionsWithAssessments } from "@/lib/db/performanceConditions";
 
 /**
  * "An audit report of all modifications made" — direct follow-up to the "Modify
@@ -129,6 +130,13 @@ export async function getModificationAuditReport(
     else byInstrument.set(v.instrumentId, [v]);
   }
 
+  // Fetched ONCE for the whole report (not per modification below) — see
+  // fetchPerformanceConditionAssessmentsByConditionIds's doc comment on why a
+  // before/after diff loop should never re-query per slice.
+  const assessmentsByCondition = await fetchPerformanceConditionAssessmentsByConditionIds(
+    allVersions.map((v) => v.performanceConditionId).filter((id): id is string => id !== null)
+  );
+
   const fromDate = range.from ? new Date(`${range.from}T00:00:00.000Z`) : null;
   // Inclusive of the whole "to" day, since createdAt carries a time-of-day component.
   const toDate = range.to ? new Date(new Date(`${range.to}T00:00:00.000Z`).getTime() + 24 * 60 * 60 * 1000 - 1) : null;
@@ -145,12 +153,6 @@ export async function getModificationAuditReport(
       const type = version.instrument.type as InstrumentTypeForDispatch;
       const changedFields = diffTerms(previous.terms, version.terms);
 
-      const asTermVersionRecord = (v: (typeof versions)[number]) => ({
-        effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-        label: v.label,
-        terms: v.terms,
-      });
-
       let impactApplicable = true;
       let impactMessage: string | undefined;
       let totalBeforeAmount = "0.00";
@@ -158,8 +160,8 @@ export async function getModificationAuditReport(
       let totalDelta = "0.00";
 
       try {
-        const beforeSchedule = computeFullSchedule(type, versions.slice(0, i).map(asTermVersionRecord));
-        const afterSchedule = computeFullSchedule(type, versions.slice(0, i + 1).map(asTermVersionRecord));
+        const beforeSchedule = computeFullSchedule(type, shapeTermVersionsWithAssessments(versions.slice(0, i), assessmentsByCondition));
+        const afterSchedule = computeFullSchedule(type, shapeTermVersionsWithAssessments(versions.slice(0, i + 1), assessmentsByCondition));
         const totalBefore = beforeSchedule.reduce((sum, r) => sum + Number(r.amount.toFixed(4)), 0);
         const totalAfter = afterSchedule.reduce((sum, r) => sum + Number(r.amount.toFixed(4)), 0);
         totalBeforeAmount = totalBefore.toFixed(2);

@@ -1,6 +1,21 @@
 "use client";
 
-import { BoolField, DateField, DecimalField, FieldGroup, SelectField, TextField, hintStyle } from "./FieldPrimitives";
+import { useEffect, useState } from "react";
+import {
+  BoolField,
+  DateField,
+  DecimalField,
+  FieldGroup,
+  SelectField,
+  TextAreaField,
+  TextField,
+  hintStyle,
+  labelStyle,
+  inputStyle,
+  fieldsetStyle,
+  legendStyle,
+  noteStyle,
+} from "./FieldPrimitives";
 import { theme } from "@/lib/theme";
 import {
   CashFlowArrayField,
@@ -187,6 +202,15 @@ export interface MarketConditionGrantState {
    * since v0.33.0; no guided form ever exposed it), fixed here too rather than only on
    * the service-condition form it was first reported against. */
   isIncentiveStockOption: boolean;
+  /** v0.38.0 — see the MARKET/PERFORMANCE CONDITION TRACKING doc comment further down.
+   * Informational; not read by the engine — deliberately, for market conditions: see
+   * that same doc comment for why a probability reassessment doesn't apply to them
+   * under ASC 718-10-25 the way it does for a performance condition. */
+  conditionDescription: string;
+  /** v0.38.0 — same doc comment. */
+  conditionCode: string;
+  /** v0.38.0 — same doc comment; informational only, same reason. */
+  expectedTimeToMeetMarketCondition: string;
 }
 
 export function defaultMarketConditionGrantState(): MarketConditionGrantState {
@@ -197,6 +221,9 @@ export function defaultMarketConditionGrantState(): MarketConditionGrantState {
     strikePrice: "9.45",
     derivedServiceEndDate: "2032-01-01",
     isIncentiveStockOption: false,
+    conditionDescription: "",
+    conditionCode: "",
+    expectedTimeToMeetMarketCondition: "",
   };
 }
 
@@ -209,6 +236,9 @@ export function toMarketConditionGrantTerms(s: MarketConditionGrantState) {
     strikePrice: s.strikePrice,
     derivedServiceEndDate: s.derivedServiceEndDate,
     isIncentiveStockOption: s.isIncentiveStockOption,
+    ...(s.conditionDescription ? { conditionDescription: s.conditionDescription } : {}),
+    ...(s.conditionCode ? { conditionCode: s.conditionCode } : {}),
+    ...(s.expectedTimeToMeetMarketCondition ? { expectedTimeToMeetMarketCondition: s.expectedTimeToMeetMarketCondition } : {}),
   };
 }
 
@@ -246,6 +276,47 @@ export function MarketConditionGrantForm({
         onChange={(v) => onChange({ ...value, derivedServiceEndDate: v })}
         hint="From the same valuation model — not necessarily the award's stated contractual term."
       />
+      <TextAreaField
+        label="Market condition description (optional)"
+        value={value.conditionDescription}
+        onChange={(v) => onChange({ ...value, conditionDescription: v })}
+        placeholder={'e.g. "Stock price closes at or above $50 for 20 consecutive trading days"'}
+        rows={2}
+      />
+      <TextField
+        label="Expected time to meet market condition (optional)"
+        value={value.expectedTimeToMeetMarketCondition}
+        onChange={(v) => onChange({ ...value, expectedTimeToMeetMarketCondition: v })}
+        placeholder="e.g. 18 months, or a target date"
+      />
+      <p style={hintStyle}>
+        Both boxes above are informational only — a market condition's fair value already prices in the probability
+        of achievement, so (unlike a performance condition) nothing here changes the expense schedule, which stays
+        fixed once granted with no reversal even if the hurdle is missed.
+      </p>
+      <TextField
+        label="Condition code (optional)"
+        value={value.conditionCode}
+        onChange={(v) => onChange({ ...value, conditionCode: v })}
+        placeholder="e.g. Apr 2026 Stock Price Mkt"
+      />
+      <p style={hintStyle}>
+        A short tag for tracking this condition across grants — give two grants the SAME code when they actually
+        vest on the same real-world condition.
+        {value.conditionDescription.trim() && (
+          <>
+            {" "}
+            Suggested:{" "}
+            <button
+              type="button"
+              onClick={() => onChange({ ...value, conditionCode: suggestConditionCode(value.grantDate, value.conditionDescription, "Mkt") })}
+              style={suggestionButtonStyle}
+            >
+              {suggestConditionCode(value.grantDate, value.conditionDescription, "Mkt")}
+            </button>
+          </>
+        )}
+      </p>
       <BoolField
         label="Incentive stock option (ISO)"
         value={value.isIncentiveStockOption}
@@ -258,6 +329,62 @@ export function MarketConditionGrantForm({
     </>
   );
 }
+
+/** Suggests a short, human-readable identifier for a performance/market condition —
+ * e.g. grantDate "2026-04-15" + description "EBITDA target of $5M" + kind "Perf" ->
+ * "Apr 2026 EBITDA target Perf". Requested (with that exact example) so multiple
+ * grants tied to the SAME actual condition (e.g. everyone's award vesting on the same
+ * FY26 EBITDA target) can be tagged consistently without everyone independently
+ * inventing their own label. This only SUGGESTS the code (via the helper text and
+ * "Use suggested code" button next to the field below) — it never overwrites
+ * `conditionCode` on its own, since the grant date or description can keep changing
+ * as someone fills out the rest of the form. See MARKET/PERFORMANCE CONDITION
+ * TRACKING's doc comment further down for the larger feature this is one building
+ * block of. */
+function suggestConditionCode(grantDate: string, description: string, kind: "Perf" | "Mkt"): string {
+  const parsed = new Date(`${grantDate}T00:00:00.000Z`);
+  const monthYear = Number.isNaN(parsed.getTime())
+    ? ""
+    : parsed.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+  const shortDescription = description.trim().split(/\s+/).slice(0, 3).join(" ");
+  return [monthYear, shortDescription, kind].filter(Boolean).join(" ");
+}
+
+/**
+ * MARKET/PERFORMANCE CONDITION TRACKING (v0.38.0) — George's request: "we need to be
+ * able to classify the grants with the same performance and market conditions... it
+ * would be important to create a performance and market code... for each grant so
+ * that these can be tracked and maintained by the system." `conditionCode` (this note
+ * applies to both PerformanceConditionGrantState and MarketConditionGrantState below)
+ * is that tag — a short, freely-editable string (auto-suggested via
+ * `suggestConditionCode` above) that multiple grants can share when they're actually
+ * tied to the same real-world condition (e.g. every officer's award that vests on the
+ * same FY26 EBITDA target).
+ *
+ * UPDATE (still v0.38.0, later in the same pass): the "not done yet" gap above is now
+ * closed FOR PERFORMANCE CONDITIONS. `conditionCode`/`conditionDescription` below are
+ * still always sent as informational text on the grant's own `terms`, but
+ * PerformanceConditionGrantForm now also renders PerformanceConditionLinkPicker,
+ * which can create a REAL, reusable PerformanceCondition database record (see
+ * prisma/schema.prisma) from those same two fields, or link this grant to one another
+ * grant already created — see `sharedConditionLinkMode` on
+ * PerformanceConditionGrantState and `resolvePerformanceConditionLink` below.
+ * Reassessing a shared condition's probability (updating it for every grant linked to
+ * it in one action, "as part of the preview process prior to posting") is done from
+ * the instrument's own page via PerformanceConditionAssessmentPanel.tsx, right next to
+ * ApproveAmortizationScheduleButton — not from this form.
+ *
+ * MARKET CONDITIONS SPECIFICALLY: unlike a performance condition, ASC 718-10-25 prices
+ * a market condition's probability of achievement INTO its grant-date fair value (via
+ * the Monte Carlo/lattice valuation) — expense is recognized on a fixed schedule with
+ * NO subsequent reversal even if the hurdle is ultimately missed (see
+ * MarketConditionGrantForm's existing hint above). A later "assess for inclusion in
+ * amortization" step, if it changes how much expense posts, would only be correct for
+ * PERFORMANCE conditions' existing cumulative-catch-up mechanic
+ * (`probabilityAssessments` on PerformanceConditionGrantState) — a market condition's
+ * `conditionCode`/`conditionDescription`/`expectedTimeToMeetMarketCondition` stay
+ * informational-only for that reason, not just for this pass.
+ */
 
 // ---- STOCK_OPTION only: performance condition (ASC 718-10-25, cumulative catch-up) -
 // The one genuinely stateful engine of the three — see vesting.ts's module doc
@@ -285,6 +412,31 @@ export interface PerformanceConditionGrantState {
    * same real gap (dispatch.ts's StockOptionPerformanceConditionTerms has supported
    * this since v0.33.0; no guided form ever exposed it), fixed here too. */
   isIncentiveStockOption: boolean;
+  /** v0.38.0 — see the MARKET/PERFORMANCE CONDITION TRACKING doc comment above.
+   * Informational when `sharedConditionLinkMode` is "none"; when "new", this becomes
+   * the new shared PerformanceCondition's own description. Not read by the engine
+   * either way. */
+  conditionDescription: string;
+  /** v0.38.0 — same doc comment. When `sharedConditionLinkMode` is "new", this is the
+   * REQUIRED code for the new shared PerformanceCondition record (must be unique per
+   * entity — see createPerformanceCondition's doc comment). When "none", it's purely
+   * informational text on this grant's own terms, same as before shared tracking
+   * existed. */
+  conditionCode: string;
+  /** v0.38.0 — REAL shared-condition tracking (see PerformanceCondition's doc comment
+   * in prisma/schema.prisma): "none" keeps today's behavior — conditionCode/
+   * conditionDescription are just text on this grant's own terms, and this grant's
+   * probability is whatever `probabilityAssessments` above says. "new" creates a real
+   * PerformanceCondition record (from conditionCode/conditionDescription) that OTHER
+   * grants can later link to. "existing" links this grant to an ALREADY-CREATED shared
+   * condition via `existingPerformanceConditionId` instead of typing a code at all.
+   * Only "new"/"existing" cause the wizard to send a `performanceConditionId` when
+   * creating the instrument — see StockAwardWizard.tsx/NewInstrumentForm.tsx's
+   * handleSubmit and PerformanceConditionLinkPicker below. */
+  sharedConditionLinkMode: "none" | "new" | "existing";
+  /** Set only when sharedConditionLinkMode === "existing" — the id of the
+   * PerformanceCondition selected from PerformanceConditionLinkPicker's dropdown. */
+  existingPerformanceConditionId: string;
 }
 
 export function defaultPerformanceConditionGrantState(): PerformanceConditionGrantState {
@@ -296,6 +448,10 @@ export function defaultPerformanceConditionGrantState(): PerformanceConditionGra
     requisiteServiceEndDate: "2032-01-01",
     probabilityAssessments: [],
     isIncentiveStockOption: false,
+    conditionDescription: "",
+    conditionCode: "",
+    sharedConditionLinkMode: "none",
+    existingPerformanceConditionId: "",
   };
 }
 
@@ -309,6 +465,8 @@ export function toPerformanceConditionGrantTerms(s: PerformanceConditionGrantSta
     requisiteServiceEndDate: s.requisiteServiceEndDate,
     probabilityAssessments: s.probabilityAssessments,
     isIncentiveStockOption: s.isIncentiveStockOption,
+    ...(s.conditionDescription ? { conditionDescription: s.conditionDescription } : {}),
+    ...(s.conditionCode ? { conditionCode: s.conditionCode } : {}),
   };
 }
 
@@ -331,14 +489,133 @@ function generateMonthlyProbableAssessments(grantDate: string, endDate: string):
   return assessments;
 }
 
-export function PerformanceConditionGrantForm({
+/** Shape returned by GET /api/entities/:id/performance-conditions — see
+ * PerformanceConditionSummary in src/lib/db/performanceConditions.ts (kept in sync by
+ * hand, same posture as every other `toXTerms` shape in this file mirroring its
+ * server-side counterpart without a shared generated type). */
+export interface PerformanceConditionSummary {
+  id: string;
+  code: string;
+  description: string | null;
+  latestAssessment: { effectiveDate: string; probable: boolean } | null;
+  linkedGrantCount: number;
+}
+
+/**
+ * v0.38.0 — the "link to a shared condition" half of PerformanceConditionGrantForm,
+ * pulled into its own component since it owns an independent data fetch (the entity's
+ * existing conditions) that only ever needs to run when "existing" mode is selected.
+ * Renders the three-way choice (none / create new / link existing) plus, in "existing"
+ * mode, the picker itself.
+ */
+function PerformanceConditionLinkPicker({
+  entityId,
   value,
   onChange,
 }: {
+  entityId: string;
   value: PerformanceConditionGrantState;
   onChange: (v: PerformanceConditionGrantState) => void;
 }) {
+  const [conditions, setConditions] = useState<PerformanceConditionSummary[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (value.sharedConditionLinkMode !== "existing" || conditions !== null || loadError) return;
+    let cancelled = false;
+    fetch(`/api/entities/${entityId}/performance-conditions`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setConditions(Array.isArray(data.performanceConditions) ? data.performanceConditions : []);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("Failed to load this entity's existing performance conditions.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entityId, value.sharedConditionLinkMode, conditions, loadError]);
+
+  return (
+    <>
+      <fieldset style={fieldsetStyle}>
+        <legend style={legendStyle}>Shared condition tracking</legend>
+        <p style={hintStyle}>
+          Several grants can vest on the exact same real-world condition (e.g. every officer&apos;s award tied to the
+          same FY26 EBITDA target). Linking them to one shared record means assessing the condition&apos;s
+          probability ONCE updates amortization for every grant linked to it — see &quot;Assess for amortization&quot;
+          on the amortization preview screen.
+        </p>
+        {(
+          [
+            { mode: "none" as const, label: "Don't share — track this grant on its own (default)" },
+            { mode: "new" as const, label: "Create a new shared condition from the fields below" },
+            { mode: "existing" as const, label: "Link to a condition another grant already created" },
+          ]
+        ).map(({ mode, label: optionLabel }) => (
+          <label key={mode} style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem", margin: "0.3rem 0" }}>
+            <input
+              type="radio"
+              name="sharedConditionLinkMode"
+              checked={value.sharedConditionLinkMode === mode}
+              onChange={() => onChange({ ...value, sharedConditionLinkMode: mode })}
+            />
+            {optionLabel}
+          </label>
+        ))}
+        {value.sharedConditionLinkMode === "existing" && (
+          <label style={labelStyle}>
+            Existing shared condition
+            {loadError ? (
+              <p style={noteStyle}>{loadError}</p>
+            ) : conditions === null ? (
+              <p style={hintStyle}>Loading…</p>
+            ) : conditions.length === 0 ? (
+              <p style={hintStyle}>
+                No shared conditions exist yet for this entity — choose &quot;Create a new shared condition&quot;
+                instead.
+              </p>
+            ) : (
+              <select
+                value={value.existingPerformanceConditionId}
+                onChange={(e) => onChange({ ...value, existingPerformanceConditionId: e.target.value })}
+                style={inputStyle}
+              >
+                <option value="">Choose one…</option>
+                {conditions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.code} — {c.linkedGrantCount} grant{c.linkedGrantCount === 1 ? "" : "s"} linked
+                    {c.latestAssessment
+                      ? `, last assessed ${c.latestAssessment.probable ? "probable" : "not probable"} as of ${c.latestAssessment.effectiveDate}`
+                      : ", never assessed"}
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+        )}
+      </fieldset>
+    </>
+  );
+}
+
+export function PerformanceConditionGrantForm({
+  value,
+  onChange,
+  entityId,
+}: {
+  value: PerformanceConditionGrantState;
+  onChange: (v: PerformanceConditionGrantState) => void;
+  /** v0.38.0 — when provided, renders PerformanceConditionLinkPicker above the
+   * code/description fields so this grant can link to (or create) a real shared
+   * PerformanceCondition record instead of only carrying informational text. Every
+   * current call site (StockAwardWizard.tsx, NewInstrumentForm.tsx) has an entityId in
+   * scope and passes it; it's optional only so a hypothetical future caller with no
+   * entity context yet doesn't break. */
+  entityId?: string;
+}) {
   const probableCount = value.probabilityAssessments.filter((a) => a.probable).length;
+  const linkedToExisting = value.sharedConditionLinkMode === "existing";
   return (
     <>
       <p style={hintStyle}>
@@ -373,9 +650,51 @@ export function PerformanceConditionGrantForm({
       <p style={hintStyle}>
         Probability assessments: {value.probabilityAssessments.length} month(s) populated, {probableCount} marked
         probable. Set above to auto-fill every month as probable (the ordinary case — produces a plain straight-line
-        schedule). To record a change in assessment later, use &quot;Modify terms&quot; on the instrument&apos;s own
-        page, or &quot;Edit as raw JSON instead&quot; below for a scenario needing per-month control now.
+        schedule). {linkedToExisting
+          ? "Ignored once linked to an existing shared condition below — that condition's own assessment history drives amortization instead."
+          : 'To record a change in assessment later, use "Modify terms" on the instrument\'s own page, or "Edit as raw JSON instead" below for a scenario needing per-month control now — or link/create a shared condition below for an ongoing, reassessable judgment.'}
       </p>
+      {entityId && <PerformanceConditionLinkPicker entityId={entityId} value={value} onChange={onChange} />}
+      {!linkedToExisting && (
+        <>
+          <TextAreaField
+            label={value.sharedConditionLinkMode === "new" ? "Performance metric description" : "Performance metric description (optional)"}
+            value={value.conditionDescription}
+            onChange={(v) => onChange({ ...value, conditionDescription: v })}
+            placeholder={'e.g. "EBITDA must exceed $5M for FY2026"'}
+            rows={2}
+          />
+          <p style={hintStyle}>
+            {value.sharedConditionLinkMode === "new"
+              ? "Becomes the new shared condition's own description."
+              : "Informational only — not used by the expense schedule or any calculation."}
+          </p>
+          <TextField
+            label={value.sharedConditionLinkMode === "new" ? "Condition code" : "Condition code (optional)"}
+            value={value.conditionCode}
+            onChange={(v) => onChange({ ...value, conditionCode: v })}
+            placeholder="e.g. Apr 2026 EBITDA Perf"
+          />
+          <p style={hintStyle}>
+            {value.sharedConditionLinkMode === "new"
+              ? "Required — this becomes the new shared condition's unique code within this entity, so other grants can find and link to it."
+              : "A short tag for tracking this condition across grants."}
+            {value.conditionDescription.trim() && (
+              <>
+                {" "}
+                Suggested:{" "}
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...value, conditionCode: suggestConditionCode(value.grantDate, value.conditionDescription, "Perf") })}
+                  style={suggestionButtonStyle}
+                >
+                  {suggestConditionCode(value.grantDate, value.conditionDescription, "Perf")}
+                </button>
+              </>
+            )}
+          </p>
+        </>
+      )}
       <BoolField
         label="Incentive stock option (ISO)"
         value={value.isIncentiveStockOption}
@@ -388,6 +707,42 @@ export function PerformanceConditionGrantForm({
       </p>
     </>
   );
+}
+
+/**
+ * v0.38.0 — resolves `sharedConditionLinkMode` into the `performanceConditionId` to
+ * send with POST /api/instruments (or the modification route), CREATING the shared
+ * PerformanceCondition first if mode is "new". Returns `undefined` for "none" (no
+ * link — today's behavior, unchanged) or when the required inputs for the chosen mode
+ * are missing (an empty code for "new", or nothing picked for "existing") — the caller
+ * treats that the same as "none" rather than blocking submission, since a
+ * performance-condition grant is still perfectly valid without shared tracking. Throws
+ * only when "new" mode's create call itself fails (e.g. a duplicate code), so the
+ * caller can surface that as a real submission error rather than silently dropping the
+ * link the user asked for.
+ */
+export async function resolvePerformanceConditionLink(
+  entityId: string,
+  s: PerformanceConditionGrantState
+): Promise<string | undefined> {
+  if (s.sharedConditionLinkMode === "existing") {
+    return s.existingPerformanceConditionId || undefined;
+  }
+  if (s.sharedConditionLinkMode === "new") {
+    const code = s.conditionCode.trim();
+    if (!code) return undefined;
+    const res = await fetch(`/api/entities/${entityId}/performance-conditions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, description: s.conditionDescription || undefined }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error ?? "Failed to create the shared performance condition");
+    }
+    return data.performanceCondition.id as string;
+  }
+  return undefined;
 }
 
 // ---- TermDebtInputs (TERM_LOAN, CONVERTIBLE_NOTE, PREFERRED_STOCK debtTerms) --------
@@ -870,3 +1225,16 @@ export function RestrictedStockForm({ value, onChange }: { value: RestrictedStoc
     </>
   );
 }
+
+/** Inline text-button styling for the "Suggested: <code>" affordance next to a
+ * condition-code field above — deliberately not `smallButtonStyle` (a boxed outline
+ * button), since this reads as part of a sentence rather than a standalone action. */
+const suggestionButtonStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  font: "inherit",
+  color: theme.accent,
+  textDecoration: "underline",
+  cursor: "pointer",
+};

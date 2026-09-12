@@ -24,6 +24,7 @@ import {
   toRestrictedStockTerms,
   toServiceConditionGrantTerms,
   toStockOptionGrantTerms,
+  resolvePerformanceConditionLink,
 } from "./termsFields/TypeForms";
 import { hintStyle, labelStyle, inputStyle as fieldInputStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
@@ -31,21 +32,25 @@ import { theme } from "@/lib/theme";
 type AwardType = "NQ" | "ISO" | "RSU" | "RESTRICTED";
 type VestingCondition = "service" | "performance" | "market";
 
-const AWARD_TYPE_INFO: Record<AwardType, { title: string; blurb: string }> = {
+const AWARD_TYPE_INFO: Record<AwardType, { title: string; heading: string; blurb: string }> = {
   NQ: {
     title: "Stock option — Nonqualified (NQ)",
+    heading: "New Nonqualified Stock Option",
     blurb: "The default option grant. No IRC 422 eligibility requirements, but exercise income is ordinary income subject to withholding.",
   },
   ISO: {
     title: "Stock option — Incentive (ISO)",
+    heading: "New Incentive Stock Option (ISO)",
     blurb: "Must meet IRC 422's requirements (this platform doesn't verify those). Drives Form 3921, the $100k limit, and AMT preference elsewhere in this app.",
   },
   RSU: {
     title: "RSU",
+    heading: "New RSU",
     blurb: "A promise to deliver shares for free once vesting conditions are met — nothing is purchased.",
   },
   RESTRICTED: {
     title: "Restricted stock",
+    heading: "New Restricted Stock Award",
     blurb: "Shares issued now, subject to forfeiture, usually for a nominal purchase price (or an early-exercised option's strike price).",
   },
 };
@@ -87,6 +92,26 @@ const AWARD_TYPE_INFO: Record<AwardType, { title: string; blurb: string }> = {
  * that gap without adding a column to the template and re-generating it, which is a
  * separate, larger piece of work (see BULK-UPLOAD-PLAN.md) than this wizard.
  *
+ * LINKABLE STEPPER (v0.38.0): the "1. Award type / 2. Upload method / 3. Details" strip
+ * below used to be purely decorative (just highlighting the current step); George asked
+ * for it to become real back-and-forth navigation instead of the "← Back"/"← Change
+ * award type" text buttons each step used to render on its own — those are gone now,
+ * replaced by clicking a step pill directly. A pill is only clickable once it's
+ * reachable: step 1 always is; step 2 needs an award type picked; step 3 ("Details")
+ * needs BOTH an award type AND having actually opened "Enter manually" at least once
+ * (`reachedManual` below) — otherwise clicking it would land on a manual-entry form
+ * for a path the user never chose (they might still be headed to bulk upload).
+ * `reachedManual` deliberately never resets when you go back to step 1 or 2, so once
+ * you've been to the details screen for one award type, you can jump straight back to
+ * it after changing your mind about the type — the details screen itself always
+ * reflects whichever award type is CURRENTLY selected, not whichever one you were on
+ * when you first reached it.
+ *
+ * The page's own `<h1>` moved here from stock-award/page.tsx (a server component that
+ * can't react to this client-side `awardType` state) so it can read "New Stock Award"
+ * before a type is picked and something specific — "New RSU", "New Incentive Stock
+ * Option (ISO)" — once one is (see AWARD_TYPE_INFO's `heading` field).
+ *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 export function StockAwardWizard({
@@ -101,6 +126,10 @@ export function StockAwardWizard({
   const router = useRouter();
   const [step, setStep] = useState<"type" | "path" | "manual">("type");
   const [awardType, setAwardType] = useState<AwardType | null>(null);
+  // Once true, stays true for the rest of this component's life — see the LINKABLE
+  // STEPPER doc comment above for why "Details" needs this in addition to `awardType`
+  // before its stepper pill becomes clickable.
+  const [reachedManual, setReachedManual] = useState(false);
   const [vestingCondition, setVestingCondition] = useState<VestingCondition>("service");
 
   const [stakeholderId, setStakeholderId] = useState(initialStakeholderId ?? stakeholders[0]?.id ?? "");
@@ -129,6 +158,13 @@ export function StockAwardWizard({
     setStep("path");
   }
 
+  /** Gates the stepper's clickable pills — see the LINKABLE STEPPER doc comment. */
+  function goToStep(target: "type" | "path" | "manual") {
+    if (target === "path" && !awardType) return;
+    if (target === "manual" && !(awardType && reachedManual)) return;
+    setStep(target);
+  }
+
   function instrumentType(): "STOCK_OPTION" | "RSU" | "RESTRICTED_STOCK" {
     if (awardType === "RSU") return "RSU";
     if (awardType === "RESTRICTED") return "RESTRICTED_STOCK";
@@ -154,10 +190,29 @@ export function StockAwardWizard({
     setStatus("loading");
     setMessage(null);
     try {
+      // v0.38.0 — a performance-condition award may be linking to (or creating) a
+      // shared PerformanceCondition; that has to happen BEFORE the instrument itself
+      // is created, since creating the instrument is what needs the resulting id. See
+      // resolvePerformanceConditionLink's doc comment — returns undefined for every
+      // other award type/vesting condition and for "none" mode, unchanged from before
+      // this feature existed.
+      const performanceConditionId =
+        awardType !== "RSU" && awardType !== "RESTRICTED" && vestingCondition === "performance"
+          ? await resolvePerformanceConditionLink(entityId, stockOptionPerformance)
+          : undefined;
+
       const res = await fetch("/api/instruments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entityId, stakeholderId, type: instrumentType(), issueDate, terms: currentTerms(), label }),
+        body: JSON.stringify({
+          entityId,
+          stakeholderId,
+          type: instrumentType(),
+          issueDate,
+          terms: currentTerms(),
+          label,
+          performanceConditionId,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -174,12 +229,29 @@ export function StockAwardWizard({
 
   const bulkUploadType = awardType === "RSU" ? "RSU" : awardType === "RESTRICTED" ? "RESTRICTED_STOCK" : "STOCK_OPTION";
 
+  const canGoToPath = !!awardType;
+  const canGoToManual = !!(awardType && reachedManual);
+
   return (
     <div>
+      <h1>{awardType ? AWARD_TYPE_INFO[awardType].heading : "New Stock Award"}</h1>
+
       <ol style={stepperStyle}>
-        <li style={stepPillStyle(step === "type")}>1. Award type</li>
-        <li style={stepPillStyle(step === "path")}>2. Manual or bulk</li>
-        <li style={stepPillStyle(step === "manual")}>3. Details</li>
+        <li>
+          <button type="button" onClick={() => goToStep("type")} style={stepPillStyle(step === "type", true)}>
+            1. Award type
+          </button>
+        </li>
+        <li>
+          <button type="button" onClick={() => goToStep("path")} disabled={!canGoToPath} style={stepPillStyle(step === "path", canGoToPath)}>
+            2. Upload method
+          </button>
+        </li>
+        <li>
+          <button type="button" onClick={() => goToStep("manual")} disabled={!canGoToManual} style={stepPillStyle(step === "manual", canGoToManual)}>
+            3. Details
+          </button>
+        </li>
       </ol>
 
       {step === "type" && (
@@ -198,16 +270,18 @@ export function StockAwardWizard({
 
       {step === "path" && awardType && (
         <div>
-          <p>
-            <button type="button" onClick={() => setStep("type")} style={linkButtonStyle}>
-              &larr; Change award type
-            </button>
-          </p>
           <p style={{ color: theme.inkMuted }}>
             Granting a <strong>{AWARD_TYPE_INFO[awardType].title}</strong>. How do you want to enter it?
           </p>
           <div style={{ display: "grid", gap: "0.75rem" }}>
-            <button type="button" onClick={() => setStep("manual")} style={tileStyle}>
+            <button
+              type="button"
+              onClick={() => {
+                setReachedManual(true);
+                setStep("manual");
+              }}
+              style={tileStyle}
+            >
               <div style={{ fontWeight: 600 }}>Enter manually</div>
               <div style={{ fontSize: "0.8rem", color: theme.inkMuted, marginTop: "0.15rem" }}>
                 One grantee, guided fields — full control over vesting, tranches, and conditions.
@@ -236,12 +310,6 @@ export function StockAwardWizard({
 
       {step === "manual" && awardType && (
         <form onSubmit={handleSubmit}>
-          <p>
-            <button type="button" onClick={() => setStep("path")} style={linkButtonStyle}>
-              &larr; Back
-            </button>
-          </p>
-
           <label style={labelStyle}>
             Stakeholder
             {stakeholders.length === 0 ? (
@@ -284,7 +352,7 @@ export function StockAwardWizard({
                 </label>
                 {vestingCondition === "service" && <StockOptionGrantForm value={stockOption} onChange={setStockOption} />}
                 {vestingCondition === "performance" && (
-                  <PerformanceConditionGrantForm value={stockOptionPerformance} onChange={setStockOptionPerformance} />
+                  <PerformanceConditionGrantForm value={stockOptionPerformance} onChange={setStockOptionPerformance} entityId={entityId} />
                 )}
                 {vestingCondition === "market" && <MarketConditionGrantForm value={stockOptionMarket} onChange={setStockOptionMarket} />}
               </>
@@ -312,13 +380,16 @@ const stepperStyle: React.CSSProperties = {
   fontSize: "0.8rem",
 };
 
-function stepPillStyle(active: boolean): React.CSSProperties {
+function stepPillStyle(active: boolean, clickable: boolean): React.CSSProperties {
   return {
+    font: "inherit",
     padding: "0.3rem 0.7rem",
     borderRadius: 999,
     background: active ? theme.accent : theme.surfaceAlt,
     color: active ? theme.onPrimary ?? "#fff" : theme.inkMuted,
     border: `1px solid ${active ? theme.accent : theme.border}`,
+    cursor: clickable ? "pointer" : "not-allowed",
+    opacity: clickable ? 1 : 0.5,
   };
 }
 
@@ -349,14 +420,4 @@ const buttonLinkStyle: React.CSSProperties = {
   background: theme.surfaceAlt,
   textDecoration: "none",
   color: "inherit",
-};
-
-const linkButtonStyle: React.CSSProperties = {
-  background: "none",
-  border: "none",
-  color: theme.accent,
-  cursor: "pointer",
-  padding: 0,
-  fontSize: "0.85rem",
-  textDecoration: "underline",
 };

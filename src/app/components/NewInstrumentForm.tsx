@@ -51,6 +51,7 @@ import {
   toStockOptionGrantTerms,
   toTermDebtTerms,
   toWarrantTerms,
+  resolvePerformanceConditionLink,
 } from "./termsFields/TypeForms";
 import { hintStyle, labelStyle, inputStyle as fieldInputStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
@@ -244,10 +245,21 @@ export function NewInstrumentForm({
     }
 
     try {
+      // v0.38.0 — same pre-creation shared-condition resolution StockAwardWizard.tsx
+      // does — see resolvePerformanceConditionLink's doc comment. Only applies in
+      // guided FORM mode for a STOCK_OPTION/performance grant; raw JSON mode has no
+      // structured stockOptionPerformance state to resolve a link from (and could be
+      // editing terms for any instrument type), so it never sends one — unchanged from
+      // before this feature existed.
+      const performanceConditionId =
+        mode === "form" && type === "STOCK_OPTION" && stockOptionConditionType === "performance"
+          ? await resolvePerformanceConditionLink(entityId, stockOptionPerformance)
+          : undefined;
+
       const res = await fetch("/api/instruments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entityId, stakeholderId, type, issueDate, terms, label }),
+        body: JSON.stringify({ entityId, stakeholderId, type, issueDate, terms, label, performanceConditionId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -326,7 +338,7 @@ export function NewInstrumentForm({
                 </label>
                 {stockOptionConditionType === "service" && <StockOptionGrantForm value={stockOption} onChange={setStockOption} />}
                 {stockOptionConditionType === "performance" && (
-                  <PerformanceConditionGrantForm value={stockOptionPerformance} onChange={setStockOptionPerformance} />
+                  <PerformanceConditionGrantForm value={stockOptionPerformance} onChange={setStockOptionPerformance} entityId={entityId} />
                 )}
                 {stockOptionConditionType === "market" && (
                   <MarketConditionGrantForm value={stockOptionMarket} onChange={setStockOptionMarket} />

@@ -5,7 +5,9 @@ import { computeVisibleSchedule, computeFullSchedule, InstrumentTypeForDispatch 
 import { CloseInstrumentButton } from "@/app/components/CloseInstrumentButton";
 import { CorrectionPanel } from "@/app/components/CorrectionPanel";
 import { ApproveAmortizationScheduleButton } from "@/app/components/ApproveAmortizationScheduleButton";
+import { PerformanceConditionAssessmentPanel } from "@/app/components/PerformanceConditionAssessmentPanel";
 import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
+import { attachPerformanceConditionAssessments } from "@/lib/db/performanceConditions";
 
 /**
  * Schedule + term-version-history viewer for one instrument. The term-version table at
@@ -28,7 +30,16 @@ export default async function InstrumentPage({ params }: { params: { id: string 
     include: {
       stakeholder: true,
       entity: true,
-      termVersions: { orderBy: { effectiveDate: "asc" } },
+      termVersions: {
+        orderBy: { effectiveDate: "asc" },
+        include: {
+          // v0.38.0 — only ever populated for the LATEST term version below, but
+          // fetched on all of them here since Prisma's `include` on a to-many relation
+          // can't be conditioned on which row it is — negligible cost since a grant
+          // has at most a handful of term versions.
+          performanceCondition: { include: { assessments: { orderBy: { effectiveDate: "desc" }, take: 1 }, _count: { select: { termVersions: true } } } },
+        },
+      },
     },
   });
 
@@ -54,11 +65,7 @@ export default async function InstrumentPage({ params }: { params: { id: string 
     // naive pattern silently overstated stock comp / revolver fee schedules here.
     schedule = computeVisibleSchedule(
       instrument.type as InstrumentTypeForDispatch,
-      instrument.termVersions.map((v) => ({
-        effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-        label: v.label,
-        terms: v.terms,
-      })),
+      await attachPerformanceConditionAssessments(instrument.termVersions),
       today
     );
   } catch (err) {
@@ -92,11 +99,7 @@ export default async function InstrumentPage({ params }: { params: { id: string 
   try {
     fullMonthlySchedule = computeFullSchedule(
       instrument.type as InstrumentTypeForDispatch,
-      instrument.termVersions.map((v) => ({
-        effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-        label: v.label,
-        terms: v.terms,
-      }))
+      await attachPerformanceConditionAssessments(instrument.termVersions)
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to compute the full amortization table";
@@ -106,8 +109,13 @@ export default async function InstrumentPage({ params }: { params: { id: string 
       fullScheduleError = msg;
     }
   }
-  const latestTermVersionId = instrument.termVersions[instrument.termVersions.length - 1]?.id;
+  const latestTermVersion = instrument.termVersions[instrument.termVersions.length - 1];
+  const latestTermVersionId = latestTermVersion?.id;
   const approvalIsStale = latestApproval != null && latestApproval.sourceTermVersionId !== latestTermVersionId;
+  // v0.38.0 — "assess for amortization... as part of the preview process prior to
+  // posting": only shown when the CURRENT (latest) term version is linked to a shared
+  // PerformanceCondition — see PerformanceConditionAssessmentPanel's doc comment.
+  const linkedPerformanceCondition = latestTermVersion?.performanceCondition;
 
   return (
     <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
@@ -189,6 +197,22 @@ export default async function InstrumentPage({ params }: { params: { id: string 
                 </p>
               ) : (
                 <p style={{ color: theme.inkMuted }}>Not yet approved — the table below is a live preview only, and is excluded from every report until approved.</p>
+              )}
+              {linkedPerformanceCondition && (
+                <PerformanceConditionAssessmentPanel
+                  entityId={instrument.entityId}
+                  conditionId={linkedPerformanceCondition.id}
+                  conditionCode={linkedPerformanceCondition.code}
+                  linkedGrantCount={linkedPerformanceCondition._count.termVersions}
+                  latestAssessment={
+                    linkedPerformanceCondition.assessments[0]
+                      ? {
+                          effectiveDate: linkedPerformanceCondition.assessments[0].effectiveDate.toISOString().slice(0, 10),
+                          probable: linkedPerformanceCondition.assessments[0].probable,
+                        }
+                      : null
+                  }
+                />
               )}
               <ApproveAmortizationScheduleButton instrumentId={instrument.id} />
               <div style={{ maxHeight: 400, overflowY: "auto", border: `1px solid ${theme.border}` }}>

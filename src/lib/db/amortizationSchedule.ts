@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { computeFullSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { ScheduleRow } from "@/lib/accounting/types";
+import { attachPerformanceConditionAssessments } from "@/lib/db/performanceConditions";
 
 /**
  * v0.26.0 — CORRECTED WORKFLOW. A brief v0.25.0 attempt made approval fully automatic
@@ -73,11 +74,7 @@ export async function previewAmortizationSchedule(instrumentId: string): Promise
 
   const rows = computeFullSchedule(
     instrument.type as InstrumentTypeForDispatch,
-    instrument.termVersions.map((v) => ({
-      effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-      label: v.label,
-      terms: v.terms,
-    }))
+    await attachPerformanceConditionAssessments(instrument.termVersions)
   );
 
   return rows.map(toRowResult(instrument.currency));
@@ -109,11 +106,7 @@ export async function approveAmortizationSchedule(instrumentId: string, approved
   const latestTermVersion = instrument.termVersions[instrument.termVersions.length - 1];
   const rows = computeFullSchedule(
     instrument.type as InstrumentTypeForDispatch,
-    instrument.termVersions.map((v) => ({
-      effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-      label: v.label,
-      terms: v.terms,
-    }))
+    await attachPerformanceConditionAssessments(instrument.termVersions)
   );
 
   const approval = await db.$transaction(async (tx) => {
@@ -301,11 +294,7 @@ export async function previewModificationImpact(
   }
 
   const type = instrument.type as InstrumentTypeForDispatch;
-  const currentTermVersions = instrument.termVersions.map((v) => ({
-    effectiveDate: v.effectiveDate.toISOString().slice(0, 10),
-    label: v.label,
-    terms: v.terms,
-  }));
+  const currentTermVersions = await attachPerformanceConditionAssessments(instrument.termVersions);
 
   let before: ScheduleRow[];
   try {
