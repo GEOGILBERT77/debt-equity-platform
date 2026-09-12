@@ -43,6 +43,28 @@ import { WaterfallClassInput } from "./exitWaterfall.js";
  * `conversionTerms.quantity` needed to compute a total preference dollar amount — all
  * surfaced in the result's `excluded` list, never silently dropped or guessed at,
  * same "flag rather than hide a gap" posture `capTable.ts` itself takes.
+ *
+ * HOLDER-LEVEL BREAKDOWN (v0.40.0): `classes` above stays a pooled/aggregated list —
+ * that's what `buildExitWaterfall`'s seniority math actually runs on, and it doesn't
+ * need to know or care which individual stakeholders make up a class. But the report
+ * UI wants to show, per class, WHICH investors are in it (an expand/collapse under
+ * each class row) — so `holdersByClassId` is returned alongside `classes` as a purely
+ * informational, UI-facing breakdown: same grouping key as `classes[].id`, one entry
+ * per contributing instrument. It is never fed back into `buildExitWaterfall` itself.
+ *
+ * DEBT, NOW SURFACED (NOT INCLUDED IN THE WATERFALL ITSELF): the module doc comment
+ * above still holds — TERM_LOAN/REVOLVER/PIK_NOTE balances are NOT given a seniority
+ * rank and do NOT participate in `buildExitWaterfall`'s payout math; the `exitProceeds`
+ * figure a caller enters is still assumed to be the value already left after debt is
+ * repaid. What changed: those instruments are no longer silently dropped on the floor
+ * — they're returned in `debt` below purely so the report can show "this much debt
+ * gets repaid before any of the equity classes below see a dollar," for context. A
+ * mandatorily-redeemable (liability-classified) PREFERRED_STOCK instrument is DEBT-LIKE
+ * under ASC 480-10 but is still handled by the PREFERRED_STOCK branch above (which
+ * looks for `liquidationPreference`, not a classification check) — one with no
+ * liquidationPreference recorded still lands in `excluded`, not `debt`; that's a
+ * pre-existing gap in this function's PREFERRED_STOCK handling, not something this
+ * change addresses.
  */
 
 export interface ExcludedFromWaterfall {
@@ -52,9 +74,35 @@ export interface ExcludedFromWaterfall {
   reason: string;
 }
 
+/** One instrument's contribution to a pooled waterfall class — see the module doc
+ * comment's "HOLDER-LEVEL BREAKDOWN" note. `shares` is the as-converted share count
+ * THIS instrument contributes (not the class total). */
+export interface WaterfallClassHolder {
+  instrumentId: string;
+  stakeholderId: string;
+  stakeholderName: string;
+  type: InstrumentTypeForDispatch;
+  shares: DecimalValue;
+}
+
+/** One debt instrument, surfaced for display only — see the module doc comment's
+ * "DEBT, NOW SURFACED" note. `outstandingBalance` is null when computing the current
+ * balance failed (the caller's `computeWarnings` list is where that failure itself
+ * gets reported); this instrument still appears here so its existence isn't hidden
+ * even when its exact balance couldn't be computed. */
+export interface WaterfallDebtHolding {
+  instrumentId: string;
+  stakeholderId: string;
+  stakeholderName: string;
+  type: InstrumentTypeForDispatch;
+  outstandingBalance: DecimalValue | null;
+}
+
 export interface WaterfallClassesResult {
   classes: WaterfallClassInput[];
   excluded: ExcludedFromWaterfall[];
+  holdersByClassId: Record<string, WaterfallClassHolder[]>;
+  debt: WaterfallDebtHolding[];
 }
 
 const COMMON_POOL_ID = "__common_pool__";
@@ -66,6 +114,7 @@ export function buildWaterfallClassesFromCapTable(instruments: CapTableInstrumen
   // own id, so a series with no seriesName is simply a one-member "group").
   type PreferredMember = {
     instrumentId: string;
+    stakeholderId: string;
     stakeholderName: string;
     lp: NonNullable<PreferredStockInstrumentTerms["liquidationPreference"]>;
     originalQuantity: DecimalValue;
@@ -74,6 +123,8 @@ export function buildWaterfallClassesFromCapTable(instruments: CapTableInstrumen
   const preferredGroups = new Map<string, PreferredMember[]>();
 
   let commonShares = new Decimal(0);
+  const commonHolders: WaterfallClassHolder[] = [];
+  const debt: WaterfallDebtHolding[] = [];
 
   for (const inst of instruments) {
     if (inst.type === "PREFERRED_STOCK") {
@@ -116,6 +167,7 @@ export function buildWaterfallClassesFromCapTable(instruments: CapTableInstrumen
       const group = preferredGroups.get(key) ?? [];
       group.push({
         instrumentId: inst.instrumentId,
+        stakeholderId: inst.stakeholderId,
         stakeholderName: inst.stakeholderName,
         lp,
         originalQuantity,
@@ -128,6 +180,13 @@ export function buildWaterfallClassesFromCapTable(instruments: CapTableInstrumen
     const classification = classifyInstrumentForCapTable(inst.type, inst.terms, inst.outstandingBalance);
     if (classification.kind === "equity") {
       commonShares = commonShares.plus(classification.shares);
+      commonHolders.push({
+        instrumentId: inst.instrumentId,
+        stakeholderId: inst.stakeholderId,
+        stakeholderName: inst.stakeholderName,
+        type: inst.type,
+        shares: classification.shares,
+      });
     } else if (classification.kind === "unsupported") {
       excluded.push({
         instrumentId: inst.instrumentId,
@@ -135,11 +194,22 @@ export function buildWaterfallClassesFromCapTable(instruments: CapTableInstrumen
         type: inst.type,
         reason: classification.reason,
       });
+    } else {
+      // classification.kind === "debt" — not part of the equity waterfall (see the
+      // module doc comment's "DEBT, NOW SURFACED" note), but no longer dropped
+      // silently: recorded here purely for display.
+      debt.push({
+        instrumentId: inst.instrumentId,
+        stakeholderId: inst.stakeholderId,
+        stakeholderName: inst.stakeholderName,
+        type: inst.type,
+        outstandingBalance: classification.outstandingBalance,
+      });
     }
-    // classification.kind === "debt" — excluded on purpose, see module doc comment.
   }
 
   const classes: WaterfallClassInput[] = [];
+  const holdersByClassId: Record<string, WaterfallClassHolder[]> = {};
 
   for (const [key, members] of preferredGroups) {
     const first = members[0].lp;
@@ -188,6 +258,13 @@ export function buildWaterfallClassesFromCapTable(instruments: CapTableInstrumen
       participating: first.participating,
       participationCap,
     });
+    holdersByClassId[key] = members.map((m) => ({
+      instrumentId: m.instrumentId,
+      stakeholderId: m.stakeholderId,
+      stakeholderName: m.stakeholderName,
+      type: "PREFERRED_STOCK" as const,
+      shares: m.asConvertedShares,
+    }));
   }
 
   if (commonShares.greaterThan(0)) {
@@ -202,7 +279,8 @@ export function buildWaterfallClassesFromCapTable(instruments: CapTableInstrumen
       liquidationPreferencePerShare: 0,
       participating: false,
     });
+    holdersByClassId[COMMON_POOL_ID] = commonHolders;
   }
 
-  return { classes, excluded };
+  return { classes, excluded, holdersByClassId, debt };
 }

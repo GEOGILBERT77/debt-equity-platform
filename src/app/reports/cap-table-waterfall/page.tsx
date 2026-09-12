@@ -10,6 +10,7 @@ import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } f
 import CapTableWaterfallCalculator, { WaterfallClassSummary } from "@/app/components/CapTableWaterfallCalculator";
 import WaterfallBreakpoints from "@/app/components/WaterfallBreakpoints";
 import WaterfallSensitivityAnalysis from "@/app/components/WaterfallSensitivityAnalysis";
+import WaterfallClassesTable, { WaterfallClassRow, WaterfallDebtRow } from "@/app/components/WaterfallClassesTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -35,9 +36,11 @@ import { theme } from "@/lib/theme";
  * a PREFERRED_STOCK instrument with no liquidationPreference recorded, or a series
  * whose holders disagree on its own terms, is surfaced in the "Not included" section
  * below (from `excluded`) instead of being guessed at or dropped without a trace. Debt
- * (TERM_LOAN/REVOLVER/PIK_NOTE) is excluded from the waterfall ON PURPOSE, not a gap —
- * see capTableWaterfall.ts's module doc comment: a real liquidation pays creditors
- * before any equity waterfall begins, so the exit proceeds entered here are assumed to
+ * (TERM_LOAN/REVOLVER/PIK_NOTE) is excluded from the WATERFALL MATH on purpose, not a
+ * gap — see capTableWaterfall.ts's module doc comment — but as of v0.40.0 it IS shown
+ * on this page (via WaterfallClassesTable's "Debt" section below the class stack) so
+ * the full priority picture reads in one place; the exit proceeds entered here are
+ * still assumed to
  * already be the equity value left AFTER debt is repaid.
  *
  * v0.32.0 adds the two analyses George asked for after comparing this against what
@@ -127,7 +130,7 @@ export default async function CapTableWaterfallPage({ searchParams }: { searchPa
     }
   }
 
-  const { classes, excluded } = buildWaterfallClassesFromCapTable(rollupInputs);
+  const { classes, excluded, holdersByClassId, debt } = buildWaterfallClassesFromCapTable(rollupInputs);
   const sortedClasses = classes.slice().sort((a, b) => a.seniorityRank - b.seniorityRank);
   const classSummaries: WaterfallClassSummary[] = sortedClasses.map((c) => ({
     id: c.id,
@@ -137,6 +140,33 @@ export default async function CapTableWaterfallPage({ searchParams }: { searchPa
     liquidationPreferencePerShare: c.liquidationPreferencePerShare.toString(),
     participating: c.participating,
     participationCap: c.participationCap !== undefined ? c.participationCap.toString() : null,
+  }));
+  // Same class list, plus the expand/collapse holder breakdown — a separate array
+  // (rather than folding `holders` onto WaterfallClassSummary above) because
+  // WaterfallClassSummary is also the shape CapTableWaterfallCalculator.tsx's scenario
+  // comparison table uses, which has no use for per-holder detail.
+  const classRows: WaterfallClassRow[] = sortedClasses.map((c) => ({
+    id: c.id,
+    seniorityRank: c.seniorityRank,
+    name: c.name,
+    shares: c.shares.toString(),
+    liquidationPreferencePerShare: c.liquidationPreferencePerShare.toString(),
+    participating: c.participating,
+    participationCap: c.participationCap !== undefined ? c.participationCap.toString() : null,
+    holders: (holdersByClassId[c.id] ?? []).map((h) => ({
+      instrumentId: h.instrumentId,
+      stakeholderId: h.stakeholderId,
+      stakeholderName: h.stakeholderName,
+      type: h.type,
+      shares: h.shares.toString(),
+    })),
+  }));
+  const debtRows: WaterfallDebtRow[] = debt.map((d) => ({
+    instrumentId: d.instrumentId,
+    stakeholderId: d.stakeholderId,
+    stakeholderName: d.stakeholderName,
+    type: d.type,
+    outstandingBalance: d.outstandingBalance !== null ? d.outstandingBalance.toString() : null,
   }));
 
   // Default search ceiling / range for breakpoints and sensitivity: 10x the larger of
@@ -190,46 +220,23 @@ export default async function CapTableWaterfallPage({ searchParams }: { searchPa
         <Link href={`/captable?entityId=${entityId}`}>Cap table</Link> {" · "}
         <Link href="/reports/exit-waterfall">Standalone exit waterfall calculator</Link>
       </p>
-      <h1>Cap table waterfall</h1>
+      <h1>Waterfall Analysis</h1>
       <p style={{ color: theme.inkMuted }}>
         Current priorities on exit, derived from this entity&apos;s actual stored seniority, liquidation-preference,
-        and participation terms — not a hand-typed hypothetical. Debt (term loans, revolvers, PIK notes) is
-        excluded from the class stack; the exit proceeds you enter below are assumed to already be the equity value
-        available after outstanding debt is repaid.
+        and participation terms — not a hand-typed hypothetical. Debt (term loans, revolvers, PIK notes) is shown
+        below for context but stays out of the class stack itself; the exit proceeds you enter further down are
+        assumed to already be the equity value available after that debt is repaid.
       </p>
 
       <h2>Current priorities (seniority order)</h2>
-      {classSummaries.length === 0 ? (
+      {classSummaries.length === 0 && debtRows.length === 0 ? (
         <p style={{ color: theme.warning.fg }}>
           No waterfall classes could be derived yet — add liquidation-preference terms to at least one preferred
           stock instrument, or common/option/warrant instruments to form the common pool. See &ldquo;Not
           included&rdquo; below for specifics.
         </p>
       ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Seniority</th>
-              <th style={cellStyle}>Class</th>
-              <th style={cellStyle}>As-converted shares</th>
-              <th style={cellStyle}>Preference / share</th>
-              <th style={cellStyle}>Participating?</th>
-              <th style={cellStyle}>Participation cap / share</th>
-            </tr>
-          </thead>
-          <tbody>
-            {classSummaries.map((c) => (
-              <tr key={c.id}>
-                <td style={cellStyle}>{c.seniorityRank === Number.MAX_SAFE_INTEGER ? "Last (common)" : c.seniorityRank}</td>
-                <td style={cellStyle}>{c.name}</td>
-                <td style={cellStyle}>{c.shares}</td>
-                <td style={cellStyle}>${Number(c.liquidationPreferencePerShare).toFixed(2)}</td>
-                <td style={cellStyle}>{c.participating ? "Yes" : "No"}</td>
-                <td style={cellStyle}>{c.participationCap ? `$${Number(c.participationCap).toFixed(2)}` : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <WaterfallClassesTable classes={classRows} debt={debtRows} />
       )}
 
       {(excluded.length > 0 || computeWarnings.length > 0) && (
@@ -276,5 +283,3 @@ export default async function CapTableWaterfallPage({ searchParams }: { searchPa
     </main>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

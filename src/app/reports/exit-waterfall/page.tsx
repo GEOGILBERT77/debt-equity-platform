@@ -18,7 +18,7 @@ export default function ExitWaterfallPage() {
     <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1000 }}>
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
-        <Link href="/reports/cap-table-waterfall">Cap table waterfall report (real stored terms)</Link>
+        <Link href="/reports/cap-table-waterfall">Waterfall Analysis (real stored terms)</Link>
       </p>
       <h1>Exit / liquidation waterfall calculator</h1>
       <p style={{ color: theme.inkMuted }}>

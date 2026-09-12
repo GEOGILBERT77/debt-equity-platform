@@ -75,7 +75,12 @@ export default function WaterfallSensitivityAnalysis({
         <label>
           Steps <input style={{ ...inputStyle, width: 60 }} value={stepsInput} onChange={(e) => setStepsInput(e.target.value)} />
         </label>
-        <button type="button" onClick={handleRun} disabled={status === "loading"} style={smallButtonStyle}>
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={status === "loading" || !minInput.trim() || !maxInput.trim() || !stepsInput.trim()}
+          style={smallButtonStyle}
+        >
           {status === "loading" ? "Computing…" : "Run sensitivity"}
         </button>
       </div>

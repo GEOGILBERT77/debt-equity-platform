@@ -113,7 +113,7 @@ export default function WaterfallBreakpoints({
             placeholder="e.g. 500000000"
           />
         </label>
-        <button type="button" onClick={handleRecompute} disabled={status === "loading" || !maxInput} style={smallButtonStyle}>
+        <button type="button" onClick={handleRecompute} disabled={status === "loading" || !maxInput.trim()} style={smallButtonStyle}>
           {status === "loading" ? "Computing…" : "Recompute"}
         </button>
       </div>

@@ -42,6 +42,25 @@ import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
  *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
+
+/**
+ * v0.40.0 bug fix: a numeric-input field (exitProceeds, sensitivity.min/max,
+ * breakpointsMax) that's missing, null, or blank used to only be caught when it was
+ * exactly the empty string "" — a value of undefined/null was caught everywhere, but
+ * sensitivity.min/max had NO check at all beyond `!== undefined`, so a value of ""
+ * (the browser's own empty-input-box value once cleared, e.g. by the "Min ($)"/
+ * "Max ($)" fields in WaterfallSensitivityAnalysis.tsx) sailed past this validation
+ * and reached `new Decimal("")` deep inside buildWaterfallSensitivity/
+ * buildExitWaterfallScenarios/findWaterfallBreakpoints, which throws the raw,
+ * confusing "Cannot create a decimal from an empty string" — a real internal error
+ * message, not a helpful one, leaking straight to the user. Also catches
+ * whitespace-only input (" "), which the decimal parser trims away to "" internally
+ * (see decimal.ts's parseToRaw) and would otherwise throw the exact same way even
+ * though it isn't strictly equal to "". */
+function isBlankNumericInput(v: unknown): boolean {
+  return v === undefined || v === null || (typeof v === "string" && v.trim() === "");
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { entityId, scenarios, sensitivity, breakpointsMax } = body ?? {};
@@ -71,18 +90,18 @@ export async function POST(req: NextRequest) {
       if (!s || typeof s.label !== "string" || s.label.trim() === "") {
         return NextResponse.json({ error: `scenarios[${i}] is missing a label` }, { status: 400 });
       }
-      if (s.exitProceeds === undefined || s.exitProceeds === null || s.exitProceeds === "") {
+      if (isBlankNumericInput(s.exitProceeds)) {
         return NextResponse.json({ error: `scenarios[${i}] is missing exitProceeds` }, { status: 400 });
       }
     }
   }
   if (wantsSensitivity) {
-    if (!sensitivity || sensitivity.min === undefined || sensitivity.max === undefined || !Number.isInteger(sensitivity.steps)) {
-      return NextResponse.json({ error: "sensitivity requires { min, max, steps } with steps as an integer" }, { status: 400 });
+    if (!sensitivity || isBlankNumericInput(sensitivity.min) || isBlankNumericInput(sensitivity.max) || !Number.isInteger(sensitivity.steps)) {
+      return NextResponse.json({ error: "sensitivity requires { min, max, steps } with steps as an integer, and min/max can't be blank" }, { status: 400 });
     }
   }
   if (wantsBreakpoints) {
-    if (breakpointsMax === null || breakpointsMax === "") {
+    if (isBlankNumericInput(breakpointsMax)) {
       return NextResponse.json({ error: "breakpointsMax must be a positive number" }, { status: 400 });
     }
   }

@@ -120,7 +120,6 @@ const GAAP_REPORT_GROUPS: { heading: string; items: ReportLink[] }[] = [
       { label: "Modification audit", href: "/reports/modification-audit", scoped: true },
       { label: "Grants report", href: "/reports/grants", scoped: true },
       { label: "Cap table export (CSV)", href: "/api/reports/cap-table-export", scoped: true },
-      { label: "Cap table waterfall", href: "/reports/cap-table-waterfall", scoped: true },
       { label: "Stock option tax/compliance", href: "/reports/option-tax-compliance", scoped: true },
       { label: "Debt modification / extinguishment", href: "/reports/debt-modification", scoped: true },
       { label: "Stock option amortization", href: "/reports/stock-option-amortization", scoped: true },
@@ -166,7 +165,7 @@ export function NavBar({
   // Falls back to the user's default entity ONLY when the URL has no entityId at all —
   // see the DEFAULT ENTITY note above. An entityId already in the URL always wins.
   const entityId = searchParams.get("entityId") ?? defaultEntityId ?? null;
-  const [openMenu, setOpenMenu] = useState<"transactions" | "reports" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"transactions" | "captable" | "reports" | null>(null);
   const navRef = useRef<HTMLElement>(null);
 
   // Closes an open dropdown on an outside click — without this, clicking anywhere
@@ -282,9 +281,29 @@ export function NavBar({
         )}
       </div>
 
-      <Link href={withEntityId("/captable", entityId)} style={navLinkStyle} onClick={() => setOpenMenu(null)}>
-        Interactive cap table
-      </Link>
+      <div style={{ position: "relative" }}>
+        <button
+          type="button"
+          onClick={() => setOpenMenu(openMenu === "captable" ? null : "captable")}
+          style={navButtonStyle(openMenu === "captable")}
+        >
+          Interactive cap table ▾
+        </button>
+        {openMenu === "captable" && (
+          <div style={dropdownStyle}>
+            <Link href={withEntityId("/captable", entityId)} style={dropdownItemStyle} onClick={() => setOpenMenu(null)}>
+              Cap table
+            </Link>
+            <Link
+              href={withEntityId("/reports/cap-table-waterfall", entityId)}
+              style={dropdownItemStyle}
+              onClick={() => setOpenMenu(null)}
+            >
+              Waterfall Analysis
+            </Link>
+          </div>
+        )}
+      </div>
 
       <Link
         href={entityId ? `/entities/${entityId}/board-consents` : "/"}
