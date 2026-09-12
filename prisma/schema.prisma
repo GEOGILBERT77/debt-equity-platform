@@ -110,6 +110,8 @@ model Entity {
   /// entity set as their default. Not rendered anywhere; exists only because Prisma
   /// requires both sides of a relation to be declared.
   defaultForUsers User[] @relation("UserDefaultEntity")
+  /// v0.38.0 — see PerformanceCondition's own doc comment.
+  performanceConditions PerformanceCondition[]
 }
 
 /// One real person who can log into this app — as distinct from a Stakeholder, which
@@ -168,6 +170,10 @@ model User {
   createdPortalInvites PortalInvite[] @relation("PortalInviteCreatedBy")
   /// v0.36.0 — see BoardConsent's own doc comment.
   createdBoardConsents BoardConsent[]
+  /// v0.38.0 — reverse side of PerformanceConditionAssessment.createdByUserId, same
+  /// "who did this, not just what and when" reasoning as every other
+  /// createdByUserId/recordedByUserId column in this schema.
+  createdPerformanceConditionAssessments PerformanceConditionAssessment[] @relation("PerformanceConditionAssessmentCreatedBy")
 }
 
 enum EntityRole {
@@ -464,8 +470,88 @@ model InstrumentTermVersion {
   /// Reverse side of AmortizationScheduleApproval.sourceTermVersionId below — every
   /// approved amortization table computed FROM this specific version of the terms.
   amortizationApprovals AmortizationScheduleApproval[]
+  /// v0.38.0 — links this term version to a shared PerformanceCondition (see that
+  /// model's doc comment) instead of carrying its own inline `probabilityAssessments`
+  /// in `terms`. NULLABLE and OPTIONAL: a STOCK_OPTION performance-condition grant can
+  /// still go the old way (its own `probabilityAssessments` array inside `terms`,
+  /// unchanged) — this is an opt-in for grants that actually share a real condition
+  /// with other grants. Only meaningful when the underlying instrument's latest terms
+  /// have `conditionType: "performance"`; nothing enforces that at the schema level
+  /// (same reason `terms` itself is untyped JSON — see the design note at the top of
+  /// this file), so `resolvePerformanceConditionProbabilities` (dispatch.ts) is what
+  /// actually reads this, not a database constraint.
+  performanceConditionId String?
+  performanceCondition   PerformanceCondition? @relation(fields: [performanceConditionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([instrumentId, effectiveDate])
+  @@index([performanceConditionId])
+}
+
+/// Performance-condition tracking (v0.38.0) — George's request: several grants can
+/// vest on the SAME real-world performance condition (e.g. every officer's award tied
+/// to the same FY26 EBITDA target), and the probability of THAT condition being met —
+/// not each grant's own separately-maintained copy of an assessment — is what should
+/// drive whether expense amortizes for every grant tied to it. Before this,
+/// `probabilityAssessments` lived entirely inside each grant's own `terms` JSON (see
+/// StockOptionPerformanceConditionTerms in dispatch.ts) with no way to update it once
+/// for several grants sharing the same real condition. This model is that shared
+/// identity; a grant opts in via InstrumentTermVersion.performanceConditionId above
+/// (nullable — a grant can still carry its own inline `probabilityAssessments`
+/// instead, unchanged, for backward compatibility and for anyone who doesn't need
+/// cross-grant tracking).
+///
+/// DELIBERATELY SCOPED TO PERFORMANCE CONDITIONS ONLY, NOT MARKET CONDITIONS: ASC
+/// 718-10-25 prices a market condition's probability of achievement INTO its grant-
+/// date fair value (the Monte Carlo/lattice valuation) — expense recognizes on a fixed
+/// schedule with NO reversal even if the hurdle is ultimately missed (see
+/// MarketConditionGrantForm's hint in TypeForms.tsx). A market-condition grant's
+/// `conditionCode`/`conditionDescription`/`expectedTimeToMeetMarketCondition` stay
+/// plain informational text inside its own `terms` JSON for that reason, not a
+/// relation to this model — there is deliberately no MarketCondition equivalent here.
+model PerformanceCondition {
+  id       String @id @default(cuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  /// Short label, e.g. "Apr 2026 EBITDA Perf" — see suggestConditionCode in
+  /// TypeForms.tsx for the suggested format this mirrors. Unique per entity so the
+  /// wizard's "link to an existing condition" picker has something unambiguous to
+  /// match against; two DIFFERENT entities may reuse the same code freely.
+  code        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assessments  PerformanceConditionAssessment[]
+  termVersions InstrumentTermVersion[]
+
+  @@unique([entityId, code])
+}
+
+/// One dated probability call against a PerformanceCondition — "as of this date, is
+/// the condition probable of being met." APPEND-ONLY, same reasoning as
+/// AmortizationScheduleApproval and Correction elsewhere in this schema: a call that
+/// turns out to be wrong is superseded by a NEW row with a later `effectiveDate`,
+/// never edited or deleted in place, so the history of what was believed and when
+/// survives audit. `resolvePerformanceConditionProbabilities` (dispatch.ts) reads
+/// this back out to answer "what was believed as of THIS period's end" for every
+/// grant tied to this condition, translating this date-keyed history into the
+/// positional, one-entry-per-period array the engine itself has always consumed (see
+/// getScheduleBuilder's STOCK_OPTION/performance branch) — the engine's own
+/// `buildPerformanceConditionSchedule` function did not need to change at all.
+model PerformanceConditionAssessment {
+  id                     String               @id @default(cuid())
+  performanceConditionId String
+  performanceCondition   PerformanceCondition @relation(fields: [performanceConditionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  effectiveDate          DateTime
+  probable               Boolean
+  note                   String?
+  /// Nullable for the same reason InstrumentTermVersion.createdByUserId is — a
+  /// direct-SQL-inserted row has nothing to set this from.
+  createdByUserId String?
+  createdByUser   User?    @relation("PerformanceConditionAssessmentCreatedBy", fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([performanceConditionId, effectiveDate])
 }
 
 /// The FULL, end-to-end (grant date through final vest/service date), MONTHLY
