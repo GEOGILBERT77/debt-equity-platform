@@ -384,10 +384,13 @@ function validatePikDebtInputs(terms: Record<string, unknown>, c: IssueCollector
   c.requireDecimal(terms, "annualPikRate");
 }
 
-/** debtAmortization.ts's RevolverInputs — used by REVOLVER. At least one of
+/** debtAmortization.ts's CombinedRevolverInputs — used by REVOLVER. At least one of
  * commitmentFee/deferredFees must be present, mirroring buildRevolverSchedule's own
  * runtime check (see debtAmortization.ts) so this fails with the same clear message
- * before the engine would, rather than a different one after. */
+ * before the engine would, rather than a different one after. `drawnBalance` (v0.38.0,
+ * once buildCombinedRevolverSchedule was wired into dispatch.ts) is entirely optional —
+ * omit it for a facility that's never been drawn, which behaves exactly as before this
+ * field existed. */
 function validateRevolverInputs(terms: Record<string, unknown>, c: IssueCollector): void {
   const hasCommitmentFee = terms.commitmentFee !== undefined && terms.commitmentFee !== null;
   const hasDeferredFees = terms.deferredFees !== undefined && terms.deferredFees !== null;
@@ -444,6 +447,76 @@ function validateRevolverInputs(terms: Record<string, unknown>, c: IssueCollecto
         c.merge(fc);
       });
     }
+  }
+
+  if (terms.drawnBalance !== undefined && terms.drawnBalance !== null) {
+    const dc = c.child("drawnBalance");
+    const drawnBalance = terms.drawnBalance;
+    if (!isPlainObject(drawnBalance)) {
+      dc.add("", "must be an object with initialPrincipal, startDate, and rateSegments when provided");
+    } else {
+      dc.requireDecimal(drawnBalance, "initialPrincipal");
+      dc.requireISODate(drawnBalance, "startDate");
+
+      if (!Array.isArray(drawnBalance.rateSegments) || drawnBalance.rateSegments.length === 0) {
+        dc.add("rateSegments", "must be a non-empty array of { effectiveDate, annualRate }");
+      } else {
+        drawnBalance.rateSegments.forEach((segment: unknown, i: number) => {
+          const sc = dc.child(`rateSegments[${i}]`);
+          if (!isPlainObject(segment)) {
+            sc.add("", "must be an object with effectiveDate and annualRate");
+          } else {
+            sc.requireISODate(segment, "effectiveDate");
+            sc.requireDecimal(segment, "annualRate");
+          }
+          dc.merge(sc);
+        });
+      }
+
+      if (drawnBalance.principalEvents !== undefined && drawnBalance.principalEvents !== null) {
+        if (!Array.isArray(drawnBalance.principalEvents)) {
+          dc.add("principalEvents", "must be an array of { date, amount } when provided");
+        } else {
+          drawnBalance.principalEvents.forEach((event: unknown, i: number) => {
+            const ec = dc.child(`principalEvents[${i}]`);
+            if (!isPlainObject(event)) {
+              ec.add("", "must be an object with date and amount (signed: positive = draw, negative = paydown)");
+            } else {
+              ec.requireISODate(event, "date");
+              ec.requireDecimal(event, "amount");
+            }
+            dc.merge(ec);
+          });
+        }
+      }
+
+      if (drawnBalance.interestPayments !== undefined && drawnBalance.interestPayments !== null) {
+        if (!Array.isArray(drawnBalance.interestPayments)) {
+          dc.add("interestPayments", "must be an array of { date, amount } when provided");
+        } else {
+          drawnBalance.interestPayments.forEach((payment: unknown, i: number) => {
+            const pc = dc.child(`interestPayments[${i}]`);
+            if (!isPlainObject(payment)) {
+              pc.add("", "must be an object with date and amount");
+            } else {
+              pc.requireISODate(payment, "date");
+              pc.requireDecimal(payment, "amount");
+            }
+            dc.merge(pc);
+          });
+        }
+      }
+
+      if (
+        drawnBalance.dayCountConvention !== undefined &&
+        drawnBalance.dayCountConvention !== null &&
+        drawnBalance.dayCountConvention !== "ACT/360" &&
+        drawnBalance.dayCountConvention !== "ACT/365"
+      ) {
+        dc.add("dayCountConvention", 'must be "ACT/360" or "ACT/365" when provided');
+      }
+    }
+    c.merge(dc);
   }
 }
 

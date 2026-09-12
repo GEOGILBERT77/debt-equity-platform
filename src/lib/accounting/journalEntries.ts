@@ -205,20 +205,31 @@ export function dailyAccrualInterestEntry(row: ScheduleRow): JournalEntry {
   return entry;
 }
 
-/** Journal entry for one period of `buildRevolverSchedule`'s output (debtAmortization.ts)
- * — a revolver's unused-commitment fee and/or deferred financing fee amortization, kept
- * as separate line pairs so each posts to the account that actually matches its nature:
- * the commitment fee is assumed paid in cash as billed (a real simplification — some
- * facilities accrue and settle it less often than every reporting period; adjust the
- * credit side to an accrued-fee-payable account if that's the case for a given
- * facility), while the deferred fee amortization runs against the deferred asset itself,
- * not cash, since that cash already left at closing. See buildRevolverSchedule's doc
- * comment for what this deliberately excludes (drawn-balance interest). */
+/** Journal entry for one period of `buildRevolverSchedule`/`buildCombinedRevolverSchedule`'s
+ * output (debtAmortization.ts) — a revolver's unused-commitment fee, deferred financing
+ * fee amortization, and (v0.38.0) drawn-balance interest, kept as separate line pairs
+ * so each posts to the account that actually matches its nature: the commitment fee is
+ * assumed paid in cash as billed (a real simplification — some facilities accrue and
+ * settle it less often than every reporting period; adjust the credit side to an
+ * accrued-fee-payable account if that's the case for a given facility), the deferred
+ * fee amortization runs against the deferred asset itself, not cash, since that cash
+ * already left at closing, and drawn-balance interest (present only once dispatch.ts
+ * is handed a REVOLVER with `drawnBalance` set, via `buildCombinedRevolverSchedule`)
+ * splits into cash-paid and accrued exactly the way `dailyAccrualInterestEntry` does
+ * for a standalone daily-accrual instrument — see that function's doc comment for the
+ * same reasoning, not repeated here.
+ *
+ * BACKWARD COMPATIBLE BY CONSTRUCTION: a row from the fee-only `buildRevolverSchedule`
+ * (no `drawnBalance` ever supplied) never carries `meta.drawnBalanceInterest`, so the
+ * new block below is simply skipped and this produces EXACTLY the same two-fee-only
+ * entry it always has. */
 export function revolverFeeExpenseEntry(row: ScheduleRow): JournalEntry {
   const commitmentFee = row.meta?.commitmentFeeAmount ? new Decimal(row.meta.commitmentFeeAmount as string) : new Decimal(0);
   const deferredAmortization = row.meta?.deferredFeeAmortization
     ? new Decimal(row.meta.deferredFeeAmortization as string)
     : new Decimal(0);
+  const drawnBalanceInterest = row.meta?.drawnBalanceInterest ? new Decimal(row.meta.drawnBalanceInterest as string) : new Decimal(0);
+  const interestCashPaid = (row.meta?.interestCashPaid as Decimal | undefined) ?? new Decimal(0);
 
   const lines: JournalEntry["lines"] = [];
   if (commitmentFee.greaterThan(0)) {
@@ -229,10 +240,25 @@ export function revolverFeeExpenseEntry(row: ScheduleRow): JournalEntry {
     lines.push({ account: "Amortization of Deferred Financing Costs", debit: deferredAmortization });
     lines.push({ account: "Deferred Financing Costs (contra-liability)", credit: deferredAmortization });
   }
+  if (drawnBalanceInterest.greaterThan(0)) {
+    lines.push({ account: "Interest Expense", debit: drawnBalanceInterest });
+    if (interestCashPaid.greaterThan(0)) {
+      lines.push({ account: "Cash", credit: interestCashPaid });
+    }
+    // Same pure timing-difference treatment as dailyAccrualInterestEntry — whatever
+    // accrued this period but wasn't paid in cash builds up (or, if cash paid exceeded
+    // this period's accrual, pays down) Accrued Interest Payable.
+    const accruedDelta = drawnBalanceInterest.minus(interestCashPaid);
+    if (accruedDelta.greaterThan(0)) {
+      lines.push({ account: "Accrued Interest Payable", credit: accruedDelta });
+    } else if (accruedDelta.isNegative()) {
+      lines.push({ account: "Accrued Interest Payable", debit: accruedDelta.abs() });
+    }
+  }
 
   const entry: JournalEntry = {
     date: row.periodEnd,
-    description: `Revolver fee expense — ${row.label}`,
+    description: `Revolver expense — ${row.label}`,
     ascReference: (row.meta?.ascReference as string) ?? "ASC 470 / ASC 835-30-45-3",
     currency: row.currency,
     lines,

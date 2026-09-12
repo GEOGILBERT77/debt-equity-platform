@@ -409,6 +409,13 @@ export function buildCombinedRevolverSchedule(inputs: CombinedRevolverInputs, pe
         deferredFeeUnamortizedBalance: feeRow.endingBalance,
         drawnBalanceInterest: interestRow.amount.toFixed(4),
         drawnBalanceEnding: interestRow.endingBalance,
+        // v0.38.0 — surfaced (not just internal to interestRow.meta) so
+        // journalEntries.ts's revolverFeeExpenseEntry can book the same cash-vs-accrued
+        // split for the drawn-balance interest leg that dailyAccrualInterestEntry
+        // already does for a standalone daily-accrual instrument — without this, the
+        // combined journal entry had no way to know how much of drawnBalanceInterest
+        // was actually paid in cash this period versus accrued.
+        interestCashPaid: interestRow.meta?.cashPaid,
         dayCountConvention: interestRow.meta?.dayCountConvention,
         rateChangesInPeriod: interestRow.meta?.rateChangesInPeriod,
         principalEventsInPeriod: interestRow.meta?.principalEventsInPeriod,

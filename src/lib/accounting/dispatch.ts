@@ -26,8 +26,8 @@ import {
   TermDebtInputs,
   buildPikSchedule,
   PikDebtInputs,
-  buildRevolverSchedule,
-  RevolverInputs,
+  buildCombinedRevolverSchedule,
+  CombinedRevolverInputs,
 } from "./debtAmortization.js";
 import { buildConventionalConvertibleNoteSchedule, ConventionalConvertibleNoteInputs } from "./convertibleNote.js";
 import { classifyWarrant, WarrantClassificationInputs } from "./warrantAllocation.js";
@@ -61,15 +61,21 @@ import {
  * functions — the level-yield, period-boundary-only model. `debtAmortization.ts` also
  * has a separate daily-basis accrual engine (`buildDailyAccrualSchedule`) for floating-
  * rate debt with mid-period rate resets or paydowns; it isn't wired into this
- * dispatcher because its input shape (`DailyAccrualDebtInputs` — rate segments, dated
- * principal events) is genuinely different from `TermDebtInputs`, not a variant of it.
- * The same limitation is why REVOLVER below only covers fee amortization, not interest
- * on the drawn balance — see `buildRevolverSchedule`'s doc comment. A composition
- * engine that adds drawn-balance interest on top of the fee streams now exists
- * (`buildCombinedRevolverSchedule`, v0.20.0) and is fully unit-tested, but isn't wired
- * in here yet either: `RevolverInputs`/`termsValidation.ts`'s validator would both need
- * a new `drawnBalance` field before a real instrument could carry this data
- * end-to-end — see that function's own doc comment for the exact remaining gap.
+ * dispatcher directly because its input shape (`DailyAccrualDebtInputs` — rate
+ * segments, dated principal events) is genuinely different from `TermDebtInputs`, not
+ * a variant of it.
+ *
+ * REVOLVER (v0.38.0 UPDATE): now maps to `buildCombinedRevolverSchedule`, not
+ * `buildRevolverSchedule` directly — that composition engine adds drawn-balance
+ * interest (via `buildDailyAccrualSchedule` on the terms' optional `drawnBalance`
+ * field) on top of the commitment-fee/deferred-fee streams `buildRevolverSchedule`
+ * always covered. This closes the gap this comment used to flag ("isn't wired in
+ * here yet"): `CombinedRevolverInputs`'s `drawnBalance` is now validated by
+ * termsValidation.ts's `validateRevolverInputs`, and `revolverFeeExpenseEntry`
+ * (journalEntries.ts) books the drawn-balance interest leg's cash-vs-accrual split
+ * alongside the existing fee lines. Omitting `drawnBalance` (every REVOLVER recorded
+ * before this change) is unaffected — see `buildCombinedRevolverSchedule`'s own doc
+ * comment on why that's a strict superset, not a behavior change.
  *
  * WARRANT is the one case that isn't a straight `terms -> engine -> ScheduleRow[]` call,
  * because a warrant's accounting genuinely branches on its own classification:
@@ -397,7 +403,12 @@ export function getScheduleBuilder(type: InstrumentTypeForDispatch): (terms: unk
     case "PIK_NOTE":
       return (terms, periods) => buildPikSchedule(terms as PikDebtInputs, periods);
     case "REVOLVER":
-      return (terms, periods) => buildRevolverSchedule(terms as RevolverInputs, periods);
+      // v0.38.0 — buildCombinedRevolverSchedule, not buildRevolverSchedule directly:
+      // see this dispatcher's SCOPE note above. Omitting `drawnBalance` (every REVOLVER
+      // recorded before this change, and any new one that's never been drawn) produces
+      // EXACTLY buildRevolverSchedule's fee-only output — this is a strict superset,
+      // not a behavior change for existing data.
+      return (terms, periods) => buildCombinedRevolverSchedule(terms as CombinedRevolverInputs, periods);
     case "CONVERTIBLE_NOTE":
       return (terms, periods) => buildConventionalConvertibleNoteSchedule(terms as ConventionalConvertibleNoteInputs, periods);
     case "SAR":
@@ -636,7 +647,7 @@ export function naturalScheduleEndDate(type: InstrumentTypeForDispatch, terms: u
       return grant.servicePeriodEndDate && grant.servicePeriodEndDate > lastVest ? grant.servicePeriodEndDate : lastVest;
     }
     case "REVOLVER": {
-      const r = terms as RevolverInputs;
+      const r = terms as CombinedRevolverInputs;
       const ends: ISODate[] = [];
       if (r.commitmentFee) ends.push(r.commitmentFee.commitmentEnd);
       if (r.deferredFees) for (const f of r.deferredFees) ends.push(f.amortizationEnd);
