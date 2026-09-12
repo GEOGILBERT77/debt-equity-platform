@@ -1,6 +1,6 @@
 {
   "name": "debt-equity-platform",
-  "version": "0.36.0",
+  "version": "0.39.0",
   "private": true,
   "description": "Core accounting engine and data model for a debt & equity management platform.",
   "type": "module",
@@ -8,7 +8,7 @@
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "postinstall": "prisma generate"
   },
   "dependencies": {
