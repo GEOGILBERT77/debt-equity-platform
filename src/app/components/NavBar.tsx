@@ -79,33 +79,51 @@ import { theme } from "@/lib/theme";
  * with a single "Stock award" entry that opens StockAwardWizard.tsx — pick the award
  * type (NQ option, ISO option, RSU, or restricted stock) there, then manual entry or
  * bulk upload — since those three were, in practice, one decision tree split across
- * three redundant-feeling screens. SAR/Warrant/Common/Preferred don't have that overlap
- * and keep their own direct links.
+ * three redundant-feeling screens.
+ *
+ * NOTES / EQUITY FUNDING CONSOLIDATION (v0.41.0): George's ask, verbatim — "for debt,
+ * there should be 3 categories: Term Loan, Notes (includes PIK and Convertible),
+ * Revolver/LOC... common stock and preferred stock should be combined into 'New Equity
+ * Funding'... 'Warrants' should be 'Standalone warrants,' while issuing debt with
+ * warrants should be another option in the 'Notes' user choice." Concretely:
+ *  - Debt: "PIK note" and "Convertible note" are no longer their own direct links —
+ *    both (plus the new "debt + warrants" combination) are now reached through the
+ *    bolded "Notes" entry, which opens NotesWizard.tsx. "Revolver" relabeled
+ *    "Revolver/LOC" (same underlying REVOLVER type/href — no schema change). "Term
+ *    loan" is unchanged, still a direct link.
+ *  - Equity: "Common stock" and "Preferred stock" are no longer their own direct
+ *    links — both are now reached through the bolded "New Equity Funding" entry,
+ *    which opens EquityFundingWizard.tsx (choose issue-more-of-an-existing-class vs.
+ *    create-a-new-class, then common or preferred). "Warrant" relabeled "Standalone
+ *    warrants" (same underlying WARRANT type/href) to distinguish it from the
+ *    debt+warrants combination now living inside "Notes". SAR keeps its own direct
+ *    link — it didn't overlap with any of the above.
  *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 
 type InstrumentTypeLink = { label: string; type: string };
 
-// v0.37.0 — STOCK_OPTION, RSU, and RESTRICTED_STOCK used to each get their own entry
-// here, all three landing on the same general-purpose NewInstrumentForm pre-set to one
-// type. Replaced by a single "Stock award" entry (rendered separately, above this
-// list — see the dropdown JSX below) that opens StockAwardWizard.tsx instead: pick the
-// award type there (NQ/ISO option, RSU, or restricted stock), then manual entry or
-// bulk upload. The remaining four types here don't share that overlapping "which of
-// these three near-identical screens do I want" problem, so they keep direct links.
+// v0.41.0 — "Standalone warrants" is the only direct link left in this column besides
+// SAR: Common/Preferred moved into the bolded "New Equity Funding" entry (rendered
+// separately, above this list — see the dropdown JSX below), which opens
+// EquityFundingWizard.tsx. Renamed from "Warrant" to "Standalone warrants" specifically
+// to distinguish it from "debt issued with warrants", which now lives inside the
+// "Notes" wizard instead (see DEBT_INSTRUMENT_TYPES below and NotesWizard.tsx).
 const EQUITY_INSTRUMENT_TYPES: InstrumentTypeLink[] = [
   { label: "Stock appreciation right (SAR)", type: "SAR" },
-  { label: "Warrant", type: "WARRANT" },
-  { label: "Common stock", type: "COMMON_STOCK" },
-  { label: "Preferred stock", type: "PREFERRED_STOCK" },
+  { label: "Standalone warrants", type: "WARRANT" },
 ];
 
+// v0.41.0 — "PIK note" and "Convertible note" moved into the bolded "Notes" entry
+// (rendered separately, above this list — see the dropdown JSX below), which opens
+// NotesWizard.tsx and also covers "debt issued with warrants" (no direct link of its
+// own — there's no single InstrumentType for that combination; see NotesWizard.tsx's
+// own doc comment for how it's modeled as two instruments). "Term loan" relabeled
+// "Revolver" to "Revolver/LOC" per George's ask — same REVOLVER type/href either way.
 const DEBT_INSTRUMENT_TYPES: InstrumentTypeLink[] = [
   { label: "Term loan", type: "TERM_LOAN" },
-  { label: "Revolver", type: "REVOLVER" },
-  { label: "PIK note", type: "PIK_NOTE" },
-  { label: "Convertible note", type: "CONVERTIBLE_NOTE" },
+  { label: "Revolver/LOC", type: "REVOLVER" },
 ];
 
 type ReportLink = { label: string; href: string; scoped?: boolean };
@@ -239,6 +257,13 @@ export function NavBar({
                 >
                   Stock award (option, RSU, restricted stock)
                 </Link>
+                <Link
+                  href={withEntityId("/instruments/new/equity-funding", entityId)}
+                  style={{ ...dropdownItemStyle, fontWeight: 600 }}
+                  onClick={() => setOpenMenu(null)}
+                >
+                  New Equity Funding (common or preferred)
+                </Link>
                 {EQUITY_INSTRUMENT_TYPES.map((t) => (
                   <Link
                     key={t.type}
@@ -259,6 +284,13 @@ export function NavBar({
               </div>
               <div>
                 <div style={groupHeadingStyle}>Debt</div>
+                <Link
+                  href={withEntityId("/instruments/new/notes", entityId)}
+                  style={{ ...dropdownItemStyle, fontWeight: 600 }}
+                  onClick={() => setOpenMenu(null)}
+                >
+                  Notes (PIK, convertible, or debt + warrants)
+                </Link>
                 {DEBT_INSTRUMENT_TYPES.map((t) => (
                   <Link
                     key={t.type}

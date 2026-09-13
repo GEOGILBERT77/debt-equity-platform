@@ -1016,6 +1016,29 @@ export interface PreferredStockState {
   accretionIssuePricePerShare: string;
   accretionRedemptionDate: string;
   accretionRedemptionValuePerShare: string;
+  // v0.41.0 — liquidation preference / exit-waterfall terms (dispatch.ts's
+  // LiquidationPreferenceTerms + PreferredConversionTerms). Both optional and OFF by
+  // default (hasLiquidationPreference/hasConversionTerms both false), so nothing about
+  // this addition changes toPreferredStockTerms's output for anyone who doesn't touch
+  // it — the exact same {classification, debtTerms|accretion} shape as before this
+  // existed. Added specifically so "New Equity Funding"'s "create a new preferred
+  // class" path (EquityFundingWizard.tsx) can actually record what MAKES a preferred
+  // class a class — seniority, preference multiple, participation — which this form
+  // had no fields for at all before (only reachable via NewInstrumentForm's "edit as
+  // raw JSON" escape hatch). capTableWaterfall.ts's own "Waterfall Analysis" report
+  // is what actually reads these; nothing in this file's own schedule/journal-entry
+  // path (preferredStock.ts) consumes them.
+  hasLiquidationPreference: boolean;
+  seriesName: string;
+  seniorityRank: string;
+  originalIssuePricePerShare: string;
+  liquidationPreferenceMultiple: string;
+  participating: boolean;
+  hasParticipationCap: boolean;
+  participationCapMultiple: string;
+  hasConversionTerms: boolean;
+  conversionQuantity: string;
+  conversionRatio: string;
 }
 export function defaultPreferredStockState(): PreferredStockState {
   return {
@@ -1028,6 +1051,17 @@ export function defaultPreferredStockState(): PreferredStockState {
     accretionIssuePricePerShare: "1.00",
     accretionRedemptionDate: "2031-01-01",
     accretionRedemptionValuePerShare: "1.30",
+    hasLiquidationPreference: false,
+    seriesName: "",
+    seniorityRank: "1",
+    originalIssuePricePerShare: "1.00",
+    liquidationPreferenceMultiple: "1",
+    participating: false,
+    hasParticipationCap: false,
+    participationCapMultiple: "3",
+    hasConversionTerms: false,
+    conversionQuantity: "100000",
+    conversionRatio: "1",
   };
 }
 function classifyPreferredLocally(s: PreferredStockState): "liability" | "mezzanine" | "permanent_equity" {
@@ -1053,6 +1087,19 @@ export function toPreferredStockTerms(s: PreferredStockState) {
       redemptionDate: s.accretionRedemptionDate,
       redemptionValuePerShare: s.accretionRedemptionValuePerShare,
     };
+  }
+  if (s.hasLiquidationPreference) {
+    terms.liquidationPreference = {
+      ...(s.seriesName.trim() ? { seriesName: s.seriesName.trim() } : {}),
+      seniorityRank: Number(s.seniorityRank),
+      originalIssuePricePerShare: s.originalIssuePricePerShare,
+      liquidationPreferenceMultiple: s.liquidationPreferenceMultiple,
+      participating: s.participating,
+      ...(s.participating && s.hasParticipationCap ? { participationCapMultiple: s.participationCapMultiple } : {}),
+    };
+  }
+  if (s.hasConversionTerms) {
+    terms.conversionTerms = { quantity: s.conversionQuantity, conversionRatio: s.conversionRatio };
   }
   return terms;
 }
@@ -1095,6 +1142,86 @@ export function PreferredStockForm({ value, onChange }: { value: PreferredStockS
           <DecimalField label="Redemption value per share" value={value.accretionRedemptionValuePerShare} onChange={(v) => onChange({ ...value, accretionRedemptionValuePerShare: v })} />
         </FieldGroup>
       )}
+      <FieldGroup
+        title="Liquidation preference (optional — drives the Waterfall Analysis report)"
+        note="Leave unchecked for a preferred class you don't need in an exit waterfall yet. If this holder is joining an EXISTING series, match its seniority/preference/participation exactly — the Waterfall Analysis report flags (and excludes) a series whose holders disagree with each other."
+      >
+        <BoolField
+          label="Record liquidation preference / seniority terms"
+          value={value.hasLiquidationPreference}
+          onChange={(v) => onChange({ ...value, hasLiquidationPreference: v })}
+        />
+        {value.hasLiquidationPreference && (
+          <>
+            <TextField
+              label="Series name"
+              value={value.seriesName}
+              onChange={(v) => onChange({ ...value, seriesName: v })}
+              placeholder="e.g. Series A-1 Preferred"
+            />
+            <DecimalField
+              label="Seniority rank"
+              value={value.seniorityRank}
+              onChange={(v) => onChange({ ...value, seniorityRank: v })}
+              hint="Lower = paid first. Common is always last, so 1 is fine for a single preferred series."
+            />
+            <DecimalField
+              label="Original issue price per share"
+              value={value.originalIssuePricePerShare}
+              onChange={(v) => onChange({ ...value, originalIssuePricePerShare: v })}
+            />
+            <DecimalField
+              label="Liquidation preference multiple"
+              value={value.liquidationPreferenceMultiple}
+              onChange={(v) => onChange({ ...value, liquidationPreferenceMultiple: v })}
+              hint="e.g. 1 for '1x', 1.5, 2."
+            />
+            <BoolField label="Participating" value={value.participating} onChange={(v) => onChange({ ...value, participating: v })} />
+            {value.participating && (
+              <>
+                <BoolField
+                  label="Participation is capped"
+                  value={value.hasParticipationCap}
+                  onChange={(v) => onChange({ ...value, hasParticipationCap: v })}
+                />
+                {value.hasParticipationCap && (
+                  <DecimalField
+                    label="Participation cap multiple"
+                    value={value.participationCapMultiple}
+                    onChange={(v) => onChange({ ...value, participationCapMultiple: v })}
+                    hint="Total return per original share (preference + participation), e.g. 3 for 'capped at 3x'."
+                  />
+                )}
+              </>
+            )}
+          </>
+        )}
+      </FieldGroup>
+      <FieldGroup
+        title="Conversion terms (optional — as-converted share count for the cap table)"
+        note="Most VC-backed preferred converts 1:1 absent a down-round anti-dilution adjustment."
+      >
+        <BoolField
+          label="Record conversion terms"
+          value={value.hasConversionTerms}
+          onChange={(v) => onChange({ ...value, hasConversionTerms: v })}
+        />
+        {value.hasConversionTerms && (
+          <>
+            <DecimalField
+              label="Preferred share quantity"
+              value={value.conversionQuantity}
+              onChange={(v) => onChange({ ...value, conversionQuantity: v })}
+            />
+            <DecimalField
+              label="Conversion ratio"
+              value={value.conversionRatio}
+              onChange={(v) => onChange({ ...value, conversionRatio: v })}
+              hint="Common shares issued per one preferred share on conversion."
+            />
+          </>
+        )}
+      </FieldGroup>
     </>
   );
 }
