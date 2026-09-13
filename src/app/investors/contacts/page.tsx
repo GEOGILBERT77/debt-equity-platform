@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { theme } from "@/lib/theme";
 import { db } from "@/lib/db";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
-import { ListingTable } from "@/app/components/ListingTable";
+import { isInviteStillValid } from "@/lib/auth/portalInvite";
+import { InvestorContactsTable, InvestorContactRow } from "@/app/components/InvestorContactsTable";
 
 const INVESTOR_TYPE_LABELS: Record<string, string> = {
   INDIVIDUAL: "Individual",
@@ -34,6 +35,21 @@ const INVESTOR_TYPE_LABELS: Record<string, string> = {
  * recorded before this feature existed — see Stakeholder.investorType's own doc
  * comment for why this is nullable rather than defaulted.
  *
+ * PORTAL STATUS + BULK ACTIONS (v0.45.0): "there should be a status column of whether
+ * the investor is in portal: 'Invited,' 'Not invited,' or 'Integrated' ... send a
+ * message and invite to portal for one or multiple investors using checkbox." Status is
+ * computed here (server-side, from the same StakeholderAccess/PortalInvite rows
+ * stakeholders/[id]/page.tsx already reads for one stakeholder at a time — see
+ * `isInviteStillValid` in portalInvite.ts, reused as-is rather than re-implemented) and
+ * handed to `InvestorContactsTable` as plain data — the checkbox selection, bulk
+ * "Invite to Portal," and "Send Message" UI all need client-side state, so that part is
+ * a client component (this page stays a server component, same split as
+ * NewStakeholderForm/NewStakeholderPage). See that component's own doc comment for why
+ * "Send Message" opens the admin's own email client (`mailto:`) rather than sending
+ * anything from inside this app — this codebase has no outbound-email vendor wired up
+ * anywhere (see communications/page.tsx), and faking a "Send" button that silently does
+ * nothing would be worse than not having one.
+ *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 export default async function InvestorContactsPage({ searchParams }: { searchParams: { entityId?: string } }) {
@@ -56,51 +72,43 @@ export default async function InvestorContactsPage({ searchParams }: { searchPar
 
   const investors = await db.stakeholder.findMany({
     where: { entityId, type: { in: ["INVESTOR", "ENTITY_HOLDER"] } },
+    include: { portalAccess: true, portalInvites: true },
     orderBy: { name: "asc" },
   });
 
+  const rows: InvestorContactRow[] = investors.map((inv) => {
+    const status: InvestorContactRow["status"] =
+      inv.portalAccess.length > 0
+        ? "INTEGRATED"
+        : inv.portalInvites.some((i) => isInviteStillValid(i))
+          ? "INVITED"
+          : "NOT_INVITED";
+    return {
+      id: inv.id,
+      name: inv.name,
+      contactPersonName: inv.contactName || inv.name,
+      investorTypeLabel: inv.investorType ? (INVESTOR_TYPE_LABELS[inv.investorType] ?? inv.investorType) : null,
+      address: inv.address,
+      email: inv.email,
+      phone: inv.phone,
+      status,
+    };
+  });
+
   return (
-    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1100 }}>
+    <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1250 }}>
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
         <Link href={`/captable?entityId=${entityId}`}>Cap table</Link>
       </p>
       <h1>Investor Contacts</h1>
       <p style={{ color: theme.inkMuted }}>
-        Every INVESTOR and entity-holder stakeholder on this entity's cap table, with a point of contact and the
-        rest of their contact info in one place. To add a stakeholder or fix any of the fields below, use the cap
-        table's "All instruments (detail)" table — this view is read-only.
+        Every INVESTOR and entity-holder stakeholder on this entity's cap table, with a point of contact, the rest
+        of their contact info, and their self-service portal status in one place. To add a stakeholder or fix any
+        of the contact fields below, use the cap table's "All instruments (detail)" table.
       </p>
 
-      {investors.length === 0 ? (
-        <p>No investors recorded for this entity yet.</p>
-      ) : (
-        <ListingTable
-          columns={[
-            { label: "Point of contact" },
-            { label: "Investor / entity name" },
-            { label: "Investor type" },
-            { label: "Mailing address" },
-            { label: "Email" },
-            { label: "Phone" },
-          ]}
-          rows={investors.map((inv) => ({
-            key: inv.id,
-            cells: [
-              inv.contactName || inv.name,
-              <Link href={`/stakeholders/${inv.id}`}>{inv.name}</Link>,
-              inv.investorType ? (
-                INVESTOR_TYPE_LABELS[inv.investorType] ?? inv.investorType
-              ) : (
-                <span style={{ color: theme.inkMuted }}>Not set</span>
-              ),
-              inv.address || <span style={{ color: theme.inkMuted }}>—</span>,
-              inv.email || <span style={{ color: theme.inkMuted }}>—</span>,
-              inv.phone || <span style={{ color: theme.inkMuted }}>—</span>,
-            ],
-          }))}
-        />
-      )}
+      {rows.length === 0 ? <p>No investors recorded for this entity yet.</p> : <InvestorContactsTable entityId={entityId} investors={rows} />}
     </main>
   );
 }
