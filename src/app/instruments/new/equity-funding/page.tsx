@@ -112,7 +112,7 @@ export default async function NewEquityFundingPage({
   const existingPreferredSeries: ExistingPreferredSeries[] = [];
   const seenSeriesNames = new Set<string>();
   for (const inst of preferredInstruments) {
-    const terms = inst.termVersions[0]?.terms as PreferredStockInstrumentTerms | undefined;
+    const terms = inst.termVersions[0]?.terms as unknown as PreferredStockInstrumentTerms | undefined;
     const seriesName = terms?.liquidationPreference?.seriesName;
     if (!seriesName || seenSeriesNames.has(seriesName)) continue;
     seenSeriesNames.add(seriesName);
