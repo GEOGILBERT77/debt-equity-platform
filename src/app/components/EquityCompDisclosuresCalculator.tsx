@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DecimalField, SelectField, smallButtonStyle, removeButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "./ListingTable";
 
 type Mode = "ROLLFORWARD" | "INTRINSIC_VALUE";
 
@@ -132,44 +133,35 @@ export default function EquityCompDisclosuresCalculator() {
       {mode === "INTRINSIC_VALUE" && (
         <fieldset style={fieldsetStyle}>
           <legend style={legendStyle}>Intrinsic value realized across a batch of exercises</legend>
-          <table style={{ borderCollapse: "collapse", width: "100%", margin: "1rem 0" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Quantity</th>
-                <th style={cellStyle}>Exercise price/unit ($, 0 for an RSU)</th>
-                <th style={cellStyle}>FMV/unit at exercise ($)</th>
-                <th style={cellStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {exerciseRows.map((r) => (
-                <tr key={r.id}>
-                  <td style={cellStyle}>
-                    <input style={inputStyle} value={r.quantity} onChange={(e) => updateExerciseRow(r.id, { quantity: e.target.value })} />
-                  </td>
-                  <td style={cellStyle}>
-                    <input
-                      style={inputStyle}
-                      value={r.exercisePricePerUnit}
-                      onChange={(e) => updateExerciseRow(r.id, { exercisePricePerUnit: e.target.value })}
-                    />
-                  </td>
-                  <td style={cellStyle}>
-                    <input
-                      style={inputStyle}
-                      value={r.fairMarketValuePerUnitAtExercise}
-                      onChange={(e) => updateExerciseRow(r.id, { fairMarketValuePerUnitAtExercise: e.target.value })}
-                    />
-                  </td>
-                  <td style={cellStyle}>
-                    <button type="button" style={removeButtonStyle} onClick={() => setExerciseRows((prev) => prev.filter((x) => x.id !== r.id))}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ margin: "1rem 0" }}>
+            <ListingTable
+              columns={[
+                { label: "Quantity" },
+                { label: "Exercise price/unit ($, 0 for an RSU)" },
+                { label: "FMV/unit at exercise ($)" },
+                { label: "" },
+              ]}
+              rows={exerciseRows.map((r) => ({
+                key: r.id,
+                cells: [
+                  <input style={inputStyle} value={r.quantity} onChange={(e) => updateExerciseRow(r.id, { quantity: e.target.value })} />,
+                  <input
+                    style={inputStyle}
+                    value={r.exercisePricePerUnit}
+                    onChange={(e) => updateExerciseRow(r.id, { exercisePricePerUnit: e.target.value })}
+                  />,
+                  <input
+                    style={inputStyle}
+                    value={r.fairMarketValuePerUnitAtExercise}
+                    onChange={(e) => updateExerciseRow(r.id, { fairMarketValuePerUnitAtExercise: e.target.value })}
+                  />,
+                  <button type="button" style={removeButtonStyle} onClick={() => setExerciseRows((prev) => prev.filter((x) => x.id !== r.id))}>
+                    Remove
+                  </button>,
+                ],
+              }))}
+            />
+          </div>
           <button type="button" style={smallButtonStyle} onClick={() => setExerciseRows((prev) => [...prev, newExerciseRow()])}>
             + Add exercise event
           </button>
@@ -215,5 +207,4 @@ export default function EquityCompDisclosuresCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };
 const inputStyle: React.CSSProperties = { width: "100%", padding: "0.3rem" };

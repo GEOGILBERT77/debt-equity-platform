@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DecimalField, smallButtonStyle, removeButtonStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "./ListingTable";
 
 interface ClassRow {
   id: string;
@@ -85,52 +86,37 @@ export default function ExitWaterfallCalculator() {
     <div>
       <DecimalField label="Exit proceeds ($)" value={exitProceeds} onChange={setExitProceeds} placeholder="e.g. 50000000" />
 
-      <table style={{ borderCollapse: "collapse", width: "100%", margin: "1rem 0" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Class name</th>
-            <th style={cellStyle}>Seniority (lower = paid first)</th>
-            <th style={cellStyle}>Shares</th>
-            <th style={cellStyle}>Pref/share ($)</th>
-            <th style={cellStyle}>Participating?</th>
-            <th style={cellStyle}>Cap ($/share, optional)</th>
-            <th style={cellStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td style={cellStyle}>
-                <input style={inputStyle} value={r.name} onChange={(e) => updateRow(r.id, { name: e.target.value })} />
-              </td>
-              <td style={cellStyle}>
-                <input style={inputStyle} value={r.seniorityRank} onChange={(e) => updateRow(r.id, { seniorityRank: e.target.value })} />
-              </td>
-              <td style={cellStyle}>
-                <input style={inputStyle} value={r.shares} onChange={(e) => updateRow(r.id, { shares: e.target.value })} />
-              </td>
-              <td style={cellStyle}>
-                <input
-                  style={inputStyle}
-                  value={r.liquidationPreferencePerShare}
-                  onChange={(e) => updateRow(r.id, { liquidationPreferencePerShare: e.target.value })}
-                />
-              </td>
-              <td style={cellStyle}>
-                <input type="checkbox" checked={r.participating} onChange={(e) => updateRow(r.id, { participating: e.target.checked })} />
-              </td>
-              <td style={cellStyle}>
-                <input style={inputStyle} value={r.participationCap} onChange={(e) => updateRow(r.id, { participationCap: e.target.value })} />
-              </td>
-              <td style={cellStyle}>
-                <button type="button" style={removeButtonStyle} onClick={() => setRows((prev) => prev.filter((x) => x.id !== r.id))}>
-                  Remove
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ margin: "1rem 0" }}>
+        <ListingTable
+          columns={[
+            { label: "Class name" },
+            { label: "Seniority (lower = paid first)" },
+            { label: "Shares" },
+            { label: "Pref/share ($)" },
+            { label: "Participating?" },
+            { label: "Cap ($/share, optional)" },
+            { label: "" },
+          ]}
+          rows={rows.map((r) => ({
+            key: r.id,
+            cells: [
+              <input style={inputStyle} value={r.name} onChange={(e) => updateRow(r.id, { name: e.target.value })} />,
+              <input style={inputStyle} value={r.seniorityRank} onChange={(e) => updateRow(r.id, { seniorityRank: e.target.value })} />,
+              <input style={inputStyle} value={r.shares} onChange={(e) => updateRow(r.id, { shares: e.target.value })} />,
+              <input
+                style={inputStyle}
+                value={r.liquidationPreferencePerShare}
+                onChange={(e) => updateRow(r.id, { liquidationPreferencePerShare: e.target.value })}
+              />,
+              <input type="checkbox" checked={r.participating} onChange={(e) => updateRow(r.id, { participating: e.target.checked })} />,
+              <input style={inputStyle} value={r.participationCap} onChange={(e) => updateRow(r.id, { participationCap: e.target.value })} />,
+              <button type="button" style={removeButtonStyle} onClick={() => setRows((prev) => prev.filter((x) => x.id !== r.id))}>
+                Remove
+              </button>,
+            ],
+          }))}
+        />
+      </div>
       <button type="button" style={smallButtonStyle} onClick={() => setRows((prev) => [...prev, newRow("New class", "1", "1")])}>
         + Add class
       </button>{" "}
@@ -148,32 +134,29 @@ export default function ExitWaterfallCalculator() {
       {results && (
         <>
           <h2>Results</h2>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Class</th>
-                <th style={cellStyle}>Converted?</th>
-                <th style={cellStyle}>Capped?</th>
-                <th style={cellStyle}>From preference</th>
-                <th style={cellStyle}>From residual</th>
-                <th style={cellStyle}>Total</th>
-                <th style={cellStyle}>Per share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.classResults.map((r) => (
-                <tr key={r.id}>
-                  <td style={cellStyle}>{r.name}</td>
-                  <td style={cellStyle}>{r.converted ? "Yes" : "No"}</td>
-                  <td style={cellStyle}>{r.cappedByParticipation ? "Yes" : "No"}</td>
-                  <td style={cellStyle}>{r.proceedsFromPreference}</td>
-                  <td style={cellStyle}>{r.proceedsFromResidual}</td>
-                  <td style={cellStyle}>{r.totalProceeds}</td>
-                  <td style={cellStyle}>{r.perShareProceeds}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ListingTable
+            columns={[
+              { label: "Class" },
+              { label: "Converted?" },
+              { label: "Capped?" },
+              { label: "From preference", align: "right" },
+              { label: "From residual", align: "right" },
+              { label: "Total", align: "right" },
+              { label: "Per share", align: "right" },
+            ]}
+            rows={results.classResults.map((r) => ({
+              key: r.id,
+              cells: [
+                r.name,
+                r.converted ? "Yes" : "No",
+                r.cappedByParticipation ? "Yes" : "No",
+                r.proceedsFromPreference,
+                r.proceedsFromResidual,
+                r.totalProceeds,
+                r.perShareProceeds,
+              ],
+            }))}
+          />
           <p>
             Total distributed: {results.totalDistributed}
             {Number(results.undistributed) !== 0 && (
@@ -186,5 +169,4 @@ export default function ExitWaterfallCalculator() {
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };
 const inputStyle: React.CSSProperties = { width: "100%", padding: "0.25rem", fontSize: "0.85rem" };

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { theme } from "@/lib/theme";
+import { ListingTable, spanCell } from "./ListingTable";
 
 export interface WaterfallClassHolderRow {
   instrumentId: string;
@@ -81,58 +82,48 @@ export default function WaterfallClassesTable({ classes, debt }: { classes: Wate
             priority picture is visible in one place: this comes off the top, then the equity classes below split
             whatever&apos;s left.
           </p>
-          <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "1.5rem" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Lender / holder</th>
-                <th style={cellStyle}>Instrument</th>
-                <th style={cellStyle}>Outstanding balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {debt.map((d) => (
-                <tr key={d.instrumentId}>
-                  <td style={cellStyle}>{d.stakeholderName}</td>
-                  <td style={cellStyle}>{INSTRUMENT_TYPE_LABELS[d.type] ?? d.type}</td>
-                  <td style={cellStyle}>
-                    {d.outstandingBalance !== null ? `$${Number(d.outstandingBalance).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
-                  </td>
-                </tr>
-              ))}
-              <tr>
-                <td style={{ ...cellStyle, fontWeight: "bold" }} colSpan={2}>
-                  Total debt
-                </td>
-                <td style={{ ...cellStyle, fontWeight: "bold" }}>
-                  $
-                  {debt
-                    .reduce((sum, d) => sum + (d.outstandingBalance !== null ? Number(d.outstandingBalance) : 0), 0)
-                    .toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div style={{ marginBottom: "1.5rem" }}>
+            <ListingTable
+              columns={[{ label: "Lender / holder" }, { label: "Instrument" }, { label: "Outstanding balance", align: "right" }]}
+              rows={[
+                ...debt.map((d) => ({
+                  key: d.instrumentId,
+                  cells: [
+                    d.stakeholderName,
+                    INSTRUMENT_TYPE_LABELS[d.type] ?? d.type,
+                    d.outstandingBalance !== null
+                      ? `$${Number(d.outstandingBalance).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                      : "—",
+                  ],
+                })),
+                {
+                  key: "total",
+                  highlight: true,
+                  cells: [
+                    spanCell("Total debt", 2),
+                    `$${debt
+                      .reduce((sum, d) => sum + (d.outstandingBalance !== null ? Number(d.outstandingBalance) : 0), 0)
+                      .toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+                  ],
+                },
+              ]}
+            />
+          </div>
         </>
       )}
 
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}></th>
-            <th style={cellStyle}>Seniority</th>
-            <th style={cellStyle}>Class</th>
-            <th style={cellStyle}>As-converted shares</th>
-            <th style={cellStyle}>Preference / share</th>
-            <th style={cellStyle}>Participating?</th>
-            <th style={cellStyle}>Participation cap / share</th>
-          </tr>
-        </thead>
-        <tbody>
-          {classes.map((c) => (
-            <ClassRows key={c.id} c={c} expanded={!!expanded[c.id]} onToggle={() => toggle(c.id)} />
-          ))}
-        </tbody>
-      </table>
+      <ListingTable
+        columns={[
+          { label: "" },
+          { label: "Seniority" },
+          { label: "Class" },
+          { label: "As-converted shares", align: "right" },
+          { label: "Preference / share", align: "right" },
+          { label: "Participating?" },
+          { label: "Participation cap / share", align: "right" },
+        ]}
+        rows={classes.flatMap((c) => classRows(c, !!expanded[c.id], () => toggle(c.id)))}
+      />
       {debt.length > 0 && (
         <p style={{ color: theme.inkMuted, fontSize: "0.8rem" }}>
           Debt above is excluded from the class stack on purpose, not a gap — a real liquidation pays creditors
@@ -144,47 +135,51 @@ export default function WaterfallClassesTable({ classes, debt }: { classes: Wate
   );
 }
 
-function ClassRows({ c, expanded, onToggle }: { c: WaterfallClassRow; expanded: boolean; onToggle: () => void }) {
-  return (
-    <>
-      <tr>
-        <td style={cellStyle}>
-          {c.holders.length > 0 && (
-            <button
-              type="button"
-              onClick={onToggle}
-              aria-label={expanded ? `Collapse ${c.name}` : `Expand ${c.name}`}
-              style={toggleButtonStyle}
-            >
-              {expanded ? "▾" : "▸"}
-            </button>
-          )}
-        </td>
-        <td style={cellStyle}>{c.seniorityRank === Number.MAX_SAFE_INTEGER ? "Last (common)" : c.seniorityRank}</td>
-        <td style={cellStyle}>{c.name}</td>
-        <td style={cellStyle}>{Number(c.shares).toLocaleString()}</td>
-        <td style={cellStyle}>${Number(c.liquidationPreferencePerShare).toFixed(2)}</td>
-        <td style={cellStyle}>{c.participating ? "Yes" : "No"}</td>
-        <td style={cellStyle}>{c.participationCap ? `$${Number(c.participationCap).toFixed(2)}` : "—"}</td>
-      </tr>
-      {expanded &&
-        c.holders.map((h) => (
-          <tr key={h.instrumentId} style={holderRowStyle}>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, paddingLeft: "1.5rem" }}>
-              {h.stakeholderName} <span style={{ color: theme.inkMuted }}>— {INSTRUMENT_TYPE_LABELS[h.type] ?? h.type}</span>
-            </td>
-            <td style={cellStyle}>{Number(h.shares).toLocaleString()}</td>
-            <td style={cellStyle} colSpan={3}></td>
-          </tr>
-        ))}
-    </>
-  );
+/** Builds this one class's own row plus (when expanded) one row per pooled holder —
+ * flattened into ListingTable's flat row model rather than a nested <ClassRows>
+ * component, the same "flatMap parent + child rows" pattern the portal's exercise
+ * history table uses (see portal/[stakeholderId]/page.tsx) for the same reason: a
+ * plain array of rows is all ListingTable needs, expand/collapse included. */
+function classRows(c: WaterfallClassRow, expanded: boolean, onToggle: () => void) {
+  const mainRow = {
+    key: c.id,
+    cells: [
+      c.holders.length > 0 && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={expanded ? `Collapse ${c.name}` : `Expand ${c.name}`}
+          style={toggleButtonStyle}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
+      ),
+      c.seniorityRank === Number.MAX_SAFE_INTEGER ? "Last (common)" : c.seniorityRank,
+      c.name,
+      Number(c.shares).toLocaleString(),
+      `$${Number(c.liquidationPreferencePerShare).toFixed(2)}`,
+      c.participating ? "Yes" : "No",
+      c.participationCap ? `$${Number(c.participationCap).toFixed(2)}` : "—",
+    ],
+  };
+  if (!expanded) return [mainRow];
+  return [
+    mainRow,
+    ...c.holders.map((h) => ({
+      key: h.instrumentId,
+      cells: [
+        "",
+        "",
+        <span style={{ paddingLeft: "1.5rem", color: theme.inkMuted }}>
+          {h.stakeholderName} — {INSTRUMENT_TYPE_LABELS[h.type] ?? h.type}
+        </span>,
+        Number(h.shares).toLocaleString(),
+        spanCell("", 3),
+      ],
+    })),
+  ];
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
-const holderRowStyle: React.CSSProperties = { background: theme.surfaceAlt, fontSize: "0.9rem" };
 const toggleButtonStyle: React.CSSProperties = {
   background: "none",
   border: "none",

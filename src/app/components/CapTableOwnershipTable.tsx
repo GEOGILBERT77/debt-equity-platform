@@ -3,41 +3,33 @@
 import Link from "next/link";
 import { Fragment, useState } from "react";
 import { theme } from "@/lib/theme";
+import { CapTableGroupRow } from "@/lib/accounting/capTableGrouping";
 
-export interface CapTableGroupMember {
-  key: string;
-  label: string;
-  href?: string;
-  shares: string;
-  percentOfGroup: string;
-}
-
-export interface CapTableGroupRow {
-  key: string;
-  label: string;
-  href?: string;
-  /** "By Instrument/Class" mode: number of distinct investors in this class.
-   *  "By Investor" mode: number of distinct classes/instrument types this investor holds. */
-  memberCount: number;
-  shares: string;
-  ownershipPercent: string;
-  members: CapTableGroupMember[];
-}
+export type { CapTableGroupRow, CapTableGroupMember } from "@/lib/accounting/capTableGrouping";
 
 /**
- * "Interactive cap table" ownership table (v0.42.0) — George's pick from the "CapStack
- * Table Styles" sample page: format #1 (the clean ledger summary) for the top-level
- * rows, with format #3's expand/collapse pattern (already live on
- * WaterfallClassesTable.tsx) for the detail underneath each one. New in this version:
- * a "By Instrument/Class" / "By Investor" toggle that swaps which grouping the
+ * "Interactive cap table" ownership table (v0.42.0, dual-percentage columns added in
+ * v0.43.0) — George's pick from the "CapStack Table Styles" sample page: format #1
+ * (the clean ledger summary) for the top-level rows, with format #3's expand/collapse
+ * pattern (already live on WaterfallClassesTable.tsx) for the detail underneath each
+ * one. A "By Instrument/Class" / "By Investor" toggle swaps which grouping the
  * top-level rows represent — same table chrome either way, just different rows and a
  * different thing revealed underneath (an investor's classes, or a class's investors).
  *
- * Deliberately dumb/presentational, same as ScheduleGridTable.tsx: both groupings are
- * pre-computed server-side in captable/page.tsx (see that file's doc comment for
- * exactly how a "class" is derived per instrument type, and for the aggregation math)
- * — this component only renders whichever of the two it's currently showing and owns
- * the expand/collapse interaction, nothing else.
+ * TWO PERCENTAGE COLUMNS (v0.43.0) — direct feedback: expanding a class showed only
+ * that investor's share OF THE CLASS, easy to misread as their share of the whole cap
+ * table. Now every expanded row shows both, clearly labeled apart: "% of Class" (or
+ * "% of Investor" in By Investor mode) for the share of whatever it's nested under,
+ * and "% of Company (FD)" for its share of the entire fully-diluted company —
+ * independent numbers, both true at once. The top-level/collapsed row only ever shows
+ * "% of Company (FD)" — its "% of Class"/"% of Investor" cell is deliberately left
+ * blank rather than showing a meaningless "100%" or self-referential figure.
+ *
+ * Deliberately dumb/presentational, same as ScheduleGridTable.tsx: both groupings
+ * (including both percentage figures) are pre-computed server-side by
+ * buildCapTableGroupings (src/lib/accounting/capTableGrouping.ts) — this component
+ * only renders whichever grouping it's currently showing and owns the expand/collapse
+ * interaction, nothing else.
  */
 export function CapTableOwnershipTable({
   totalShares,
@@ -55,6 +47,12 @@ export function CapTableOwnershipTable({
   const groupColumnLabel = mode === "class" ? "Class" : "Investor";
   const memberCountLabel = mode === "class" ? "Investors" : "Classes";
   const memberColumnHint = mode === "class" ? "investor" : "class / instrument type";
+  // The expanded detail's own ownership % is relative to whatever it's nested under —
+  // an investor's share of one class, or a class's share of one investor's total
+  // holdings — never the whole company, so it gets its own explicitly-labeled column
+  // distinct from "% of Company (FD)". See CapTableGroupMember's doc comment
+  // (capTableGrouping.ts) for why both are shown side by side rather than picking one.
+  const percentOfGroupLabel = mode === "class" ? "% of Class" : "% of Investor";
 
   function toggle(key: string) {
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -87,7 +85,8 @@ export function CapTableOwnershipTable({
                   <th style={thStyle}>{groupColumnLabel}</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>{memberCountLabel}</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Shares (FD)</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Ownership %</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>{percentOfGroupLabel}</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>% of Company (FD)</th>
                 </tr>
               </thead>
               <tbody>
@@ -104,12 +103,16 @@ export function CapTableOwnershipTable({
                         </td>
                         <td style={{ ...tdStyle, ...numStyle }}>{row.memberCount}</td>
                         <td style={{ ...tdStyle, ...numStyle }}>{row.shares}</td>
+                        {/* Deliberately blank, not "—" or "100%": a class/investor's "% of
+                            itself" isn't a meaningful number, so nothing is shown here at
+                            all rather than a value that would need its own explanation. */}
+                        <td style={{ ...tdStyle, ...numStyle }}></td>
                         <td style={{ ...tdStyle, ...numStyle }}>{row.ownershipPercent}%</td>
                       </tr>
                       {isOpen &&
                         (row.members.length === 0 ? (
                           <tr style={memberRowStyle}>
-                            <td style={{ ...tdStyle, paddingLeft: "2.4rem", color: theme.inkMuted, fontStyle: "italic" }} colSpan={4}>
+                            <td style={{ ...tdStyle, paddingLeft: "2.4rem", color: theme.inkMuted, fontStyle: "italic" }} colSpan={5}>
                               No {memberColumnHint} detail available.
                             </td>
                           </tr>
@@ -122,6 +125,7 @@ export function CapTableOwnershipTable({
                               <td style={tdStyle}></td>
                               <td style={{ ...tdStyle, ...numStyle, color: theme.inkMuted }}>{m.shares}</td>
                               <td style={{ ...tdStyle, ...numStyle, color: theme.inkMuted }}>{m.percentOfGroup}%</td>
+                              <td style={{ ...tdStyle, ...numStyle, color: theme.inkMuted }}>{m.percentOfCompany}%</td>
                             </tr>
                           ))
                         ))}
@@ -132,6 +136,7 @@ export function CapTableOwnershipTable({
                   <td style={totalCellStyle}>Fully diluted total</td>
                   <td style={totalCellStyle}></td>
                   <td style={{ ...totalCellStyle, ...numStyle }}>{totalShares}</td>
+                  <td style={{ ...totalCellStyle, ...numStyle }}></td>
                   <td style={{ ...totalCellStyle, ...numStyle }}>100.00%</td>
                 </tr>
               </tbody>

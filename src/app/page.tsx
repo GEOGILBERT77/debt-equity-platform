@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireCurrentUser } from "@/lib/auth/pageGuard";
 import { EntityRowActions } from "@/app/components/EntityRowActions";
 import { SetDefaultEntityButton } from "@/app/components/SetDefaultEntityButton";
+import { ListingTable } from "@/app/components/ListingTable";
 
 /**
  * Home page — lists every Entity the CURRENT USER has access to (never every entity in
@@ -112,43 +113,37 @@ export default async function HomePage() {
       </div>
 
       <h2>Entities</h2>
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Entity</th>
-            <th style={cellStyle}>Reporting currency</th>
-            <th style={cellStyle}>Stakeholders</th>
-            <th style={cellStyle}>Instruments</th>
-            <th style={cellStyle}>Default</th>
-            <th style={cellStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {entities.map((e) => (
-            <tr key={e.id}>
-              <td style={cellStyle}>{e.name}</td>
-              <td style={cellStyle}>{e.reportingCurrency}</td>
-              <td style={cellStyle}>{e._count.stakeholders}</td>
-              <td style={cellStyle}>{e._count.instruments}</td>
-              <td style={cellStyle}>
-                <SetDefaultEntityButton entityId={e.id} isDefault={user.defaultEntityId === e.id} />
-              </td>
-              <td style={cellStyle}>
-                <Link href={`/captable?entityId=${e.id}`}>Cap table</Link>
-                {" · "}
-                <Link href={`/reports?entityId=${e.id}`}>Reports</Link>
-                {" · "}
-                <EntityRowActions entityId={e.id} initialName={e.name} initialReportingCurrency={e.reportingCurrency} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ListingTable
+        columns={[
+          { label: "Entity" },
+          { label: "Reporting currency" },
+          { label: "Stakeholders", align: "right" },
+          { label: "Instruments", align: "right" },
+          { label: "Default" },
+          { label: "" },
+        ]}
+        rows={entities.map((e) => ({
+          key: e.id,
+          cells: [
+            e.name,
+            e.reportingCurrency,
+            e._count.stakeholders,
+            e._count.instruments,
+            <SetDefaultEntityButton entityId={e.id} isDefault={user.defaultEntityId === e.id} />,
+            <>
+              <Link href={`/captable?entityId=${e.id}`}>Cap table</Link>
+              {" · "}
+              <Link href={`/reports?entityId=${e.id}`}>Reports</Link>
+              {" · "}
+              <EntityRowActions entityId={e.id} initialName={e.name} initialReportingCurrency={e.reportingCurrency} />
+            </>,
+          ],
+        }))}
+      />
     </main>
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
 const buttonLinkStyle: React.CSSProperties = {
   display: "inline-block",
   padding: "0.4rem 0.8rem",

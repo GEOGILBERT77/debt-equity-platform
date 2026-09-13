@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { ApproveAllAmortizationSchedulesButton } from "@/app/components/ApproveAllAmortizationSchedulesButton";
 import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
+import { ListingTable } from "@/app/components/ListingTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -165,39 +166,22 @@ export default async function StockOptionAmortizationReportPage({
       )}
 
       <h2>By instrument</h2>
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Holder</th>
-            <th style={cellStyle}>Status</th>
-            <th style={cellStyle}>Approved on</th>
-            <th style={cellStyle}>Total value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {instrumentRows.map((r) => (
-            <tr key={r.instrumentId}>
-              <td style={cellStyle}>
-                <Link href={`/stakeholders/${r.stakeholderId}`}>{r.stakeholderName}</Link>
-              </td>
-              <td
-                style={{
-                  ...cellStyle,
-                  color: r.status === "approved" ? theme.success.fg : r.status === "stale" ? theme.warning.fg : theme.inkMuted,
-                }}
-              >
-                {r.status === "approved" ? "Approved" : r.status === "stale" ? "Stale — re-approve" : "Not approved"}
-              </td>
-              <td style={cellStyle}>{r.approvedAt ?? "—"}</td>
-              <td style={cellStyle}>
-                {r.totalAmount ?? "—"} <Link href={`/instruments/${r.instrumentId}`}>(view)</Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ListingTable
+        columns={[{ label: "Holder" }, { label: "Status" }, { label: "Approved on" }, { label: "Total value" }]}
+        rows={instrumentRows.map((r) => ({
+          key: r.instrumentId,
+          cells: [
+            <Link href={`/stakeholders/${r.stakeholderId}`}>{r.stakeholderName}</Link>,
+            <span style={{ color: r.status === "approved" ? theme.success.fg : r.status === "stale" ? theme.warning.fg : theme.inkMuted }}>
+              {r.status === "approved" ? "Approved" : r.status === "stale" ? "Stale — re-approve" : "Not approved"}
+            </span>,
+            r.approvedAt ?? "—",
+            <>
+              {r.totalAmount ?? "—"} <Link href={`/instruments/${r.instrumentId}`}>(view)</Link>
+            </>,
+          ],
+        }))}
+      />
     </main>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

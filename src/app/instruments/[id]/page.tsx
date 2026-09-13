@@ -7,6 +7,7 @@ import { CorrectionPanel } from "@/app/components/CorrectionPanel";
 import { ApproveAmortizationScheduleButton } from "@/app/components/ApproveAmortizationScheduleButton";
 import { PerformanceConditionAssessmentPanel } from "@/app/components/PerformanceConditionAssessmentPanel";
 import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
+import { ListingTable } from "@/app/components/ListingTable";
 import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
 import { attachPerformanceConditionAssessments } from "@/lib/db/performanceConditions";
 
@@ -244,54 +245,37 @@ export default async function InstrumentPage({ params }: { params: { id: string 
       <h2>Journal entries booked</h2>
       {journalEntries.length === 0 && <p>None yet.</p>}
       {journalEntries.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Date</th>
-              <th style={cellStyle}>Description</th>
-              <th style={cellStyle}>Lines</th>
-            </tr>
-          </thead>
-          <tbody>
-            {journalEntries.map((je) => (
-              <tr key={je.id}>
-                <td style={cellStyle}>{je.date.toISOString().slice(0, 10)}</td>
-                <td style={cellStyle}>{je.description}</td>
-                <td style={cellStyle}>
-                  {je.lines.map((l) => (
-                    <div key={l.id}>
-                      {l.account}: {l.debit ? `Dr ${l.debit.toString()}` : `Cr ${l.credit?.toString()}`}
-                    </div>
-                  ))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ListingTable
+          columns={[{ label: "Date" }, { label: "Description" }, { label: "Lines" }]}
+          rows={journalEntries.map((je) => ({
+            key: je.id,
+            cells: [
+              je.date.toISOString().slice(0, 10),
+              je.description,
+              <>
+                {je.lines.map((l) => (
+                  <div key={l.id}>
+                    {l.account}: {l.debit ? `Dr ${l.debit.toString()}` : `Cr ${l.credit?.toString()}`}
+                  </div>
+                ))}
+              </>,
+            ],
+          }))}
+        />
       )}
 
       <h2>Modification history</h2>
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Effective date</th>
-            <th style={cellStyle}>Label</th>
-          </tr>
-        </thead>
-        <tbody>
-          {instrument.termVersions.map((v) => (
-            <tr key={v.id}>
-              <td style={cellStyle}>{v.effectiveDate.toISOString().slice(0, 10)}</td>
-              <td style={cellStyle}>{v.label}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ListingTable
+        columns={[{ label: "Effective date" }, { label: "Label" }]}
+        rows={instrument.termVersions.map((v) => ({
+          key: v.id,
+          cells: [v.effectiveDate.toISOString().slice(0, 10), v.label],
+        }))}
+      />
     </main>
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
 const buttonLinkStyle: React.CSSProperties = {
   display: "inline-block",
   padding: "0.35rem 0.7rem",

@@ -6,6 +6,7 @@ import { TermDebtInputs } from "@/lib/accounting/debtAmortization";
 import { money } from "@/lib/accounting/types";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
+import { ListingTable, spanCell } from "@/app/components/ListingTable";
 
 /**
  * ASC 470-50 debt modification / extinguishment REPORT (v0.21.0) — replaces the old
@@ -166,51 +167,43 @@ export default async function DebtModificationReportPage({
       {rows.length === 0 && notYetModified.length === 0 && <p>No term loans recorded for this entity yet.</p>}
 
       {rows.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "1.5rem" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Lender</th>
-              <th style={cellStyle}>Modified on</th>
-              <th style={cellStyle}>PV original</th>
-              <th style={cellStyle}>PV new</th>
-              <th style={cellStyle}>% difference</th>
-              <th style={cellStyle}>Classification</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.instrumentId}>
-                <td style={cellStyle}>
-                  <Link href={`/stakeholders/${r.stakeholderId}`}>{r.stakeholderName}</Link>
-                </td>
-                <td style={cellStyle}>{r.modifiedOn}</td>
-                {r.error ? (
-                  <td style={{ ...cellStyle, color: theme.danger.fg }} colSpan={4}>
-                    {r.error}
-                  </td>
-                ) : (
-                  <>
-                    <td style={cellStyle}>{r.result!.presentValueOriginal.toString()}</td>
-                    <td style={cellStyle}>{r.result!.presentValueNew.toString()}</td>
-                    <td style={cellStyle}>{r.result!.percentDifference.times(100).toFixed(2)}%</td>
-                    <td
-                      style={{
-                        ...cellStyle,
-                        fontWeight: 600,
-                        color: r.result!.classification === "EXTINGUISHMENT" ? theme.warning.fg : theme.success.fg,
-                      }}
-                    >
-                      {r.result!.classification}
-                      <Link href={`/instruments/${r.instrumentId}`} style={{ marginLeft: "0.5rem", fontWeight: 400 }}>
-                        (instrument)
-                      </Link>
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <ListingTable
+            columns={[
+              { label: "Lender" },
+              { label: "Modified on" },
+              { label: "PV original", align: "right" },
+              { label: "PV new", align: "right" },
+              { label: "% difference", align: "right" },
+              { label: "Classification" },
+            ]}
+            rows={rows.map((r) => ({
+              key: r.instrumentId,
+              cells: [
+                <Link href={`/stakeholders/${r.stakeholderId}`}>{r.stakeholderName}</Link>,
+                r.modifiedOn,
+                ...(r.error
+                  ? [spanCell(<span style={{ color: theme.danger.fg }}>{r.error}</span>, 4)]
+                  : [
+                      r.result!.presentValueOriginal.toString(),
+                      r.result!.presentValueNew.toString(),
+                      `${r.result!.percentDifference.times(100).toFixed(2)}%`,
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          color: r.result!.classification === "EXTINGUISHMENT" ? theme.warning.fg : theme.success.fg,
+                        }}
+                      >
+                        {r.result!.classification}
+                        <Link href={`/instruments/${r.instrumentId}`} style={{ marginLeft: "0.5rem", fontWeight: 400 }}>
+                          (instrument)
+                        </Link>
+                      </span>,
+                    ]),
+              ],
+            }))}
+          />
+        </div>
       )}
 
       {notYetModified.length > 0 && (
@@ -232,5 +225,3 @@ export default async function DebtModificationReportPage({
     </main>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

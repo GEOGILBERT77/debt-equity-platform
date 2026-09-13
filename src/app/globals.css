@@ -65,3 +65,63 @@ input, select, textarea, button {
 .de-sched-grid tbody tr:hover {
   background: #DCE4EC;
 }
+
+/* v0.43.0 — ListingTable.tsx's row hover; same reasoning as .de-sched-grid above, just
+   without the zebra stripe (a quiet hover reads better than a zebra pattern on a plain
+   record listing — see that component's own doc comment). */
+.de-listing-table tbody tr:hover {
+  background: var(--de-surface-alt);
+}
+
+/* v0.43.0 — SITE-WIDE TYPOGRAPHY/LINK POLISH: direct feedback that the app's pages
+   "look a little old." The root cause wasn't a missing design system — theme.ts's
+   Fraunces/Public Sans/IBM Plex Mono stack and the Slate palette were already defined
+   and already loaded (see layout.tsx's <link>) — it's that almost every page's own
+   <h1>/<h2>/<a> was rendered with NO style prop at all, so it fell through to the
+   BROWSER's unstyled defaults (bold Public Sans headings with no color/spacing/
+   hierarchy, default blue underlined links) instead of ever actually using the design
+   system sitting right there in theme.ts. These rules are what a plain, unstyled
+   heading or link renders as from here on — any page/component that already sets its
+   OWN inline style for one of these (plenty do, for a specific color or size) still
+   wins for the specific properties it sets; this is just the baseline everything else
+   falls through to, the same role the pre-existing :focus-visible/::placeholder rules
+   already play. */
+h1, h2, h3, h4 {
+  font-family: 'Fraunces', Georgia, serif;
+  color: var(--de-ink);
+  font-weight: 600;
+  text-wrap: balance;
+}
+h1 {
+  font-size: 1.9rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5rem;
+}
+h2 {
+  font-size: 1.3rem;
+  margin: 1.75rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--de-border);
+}
+h2:first-of-type {
+  margin-top: 0.5rem;
+}
+h3 {
+  font-size: 1.05rem;
+  margin: 0 0 0.4rem;
+}
+h4 {
+  font-size: 0.92rem;
+  margin: 0 0 0.35rem;
+}
+a {
+  color: var(--de-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+/* A <Link>/<a> that already carries its own inline style (a nav item on the dark
+   NavBar, a styled "button" link with an explicit background/border) sets its own
+   `color` inline and isn't affected by the rule above — inline styles always win over
+   a stylesheet rule for the properties they set. */

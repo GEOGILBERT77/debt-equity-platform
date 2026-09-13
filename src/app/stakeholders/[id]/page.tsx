@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { computeVisibleSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
 import { InvitePortalAccessButton } from "@/app/components/InvitePortalAccessButton";
+import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
+import { ListingTable } from "@/app/components/ListingTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -137,24 +139,13 @@ export default async function StakeholderPage({ params }: { params: { id: string
               <p style={{ color: theme.inkMuted }}>No periodic schedule for this instrument type.</p>
             )}
             {!scheduleResult.error && scheduleResult.rows.length > 0 && (
-              <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "0.5rem" }}>
-                <thead>
-                  <tr>
-                    <th style={cellStyle}>Period</th>
-                    <th style={cellStyle}>Amount</th>
-                    <th style={cellStyle}>Ending balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scheduleResult.rows.map((row, i) => (
-                    <tr key={i}>
-                      <td style={cellStyle}>{row.label}</td>
-                      <td style={cellStyle}>{row.amount.toFixed(2)}</td>
-                      <td style={cellStyle}>{row.endingBalance?.toFixed(2) ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ScheduleGridTable
+                columns={[{ label: "Period" }, { label: "Amount", align: "right" }, { label: "Ending balance", align: "right" }]}
+                rows={scheduleResult.rows.map((row, i) => ({
+                  key: i,
+                  cells: [row.label, row.amount.toFixed(2), row.endingBalance?.toFixed(2) ?? "—"],
+                }))}
+              />
             )}
           </div>
         );
@@ -169,42 +160,29 @@ export default async function StakeholderPage({ params }: { params: { id: string
         </p>
       )}
       {documents.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Title</th>
-              <th style={cellStyle}>Instrument</th>
-              <th style={cellStyle}>Status</th>
-              <th style={cellStyle}>Link</th>
-            </tr>
-          </thead>
-          <tbody>
-            {documents.map((d) => (
-              <tr key={d.id}>
-                <td style={cellStyle}>{d.title}</td>
-                <td style={cellStyle}>
-                  {d.instrument ? <Link href={`/instruments/${d.instrument.id}`}>{d.instrument.type}</Link> : "—"}
-                </td>
-                <td style={cellStyle}>{d.versions[0]?.status ?? "—"}</td>
-                <td style={cellStyle}>
-                  {d.versions[0]?.storageUrl ? (
-                    <a href={d.versions[0].storageUrl} target="_blank" rel="noreferrer">
-                      Open
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ListingTable
+          columns={[{ label: "Title" }, { label: "Instrument" }, { label: "Status" }, { label: "Link" }]}
+          rows={documents.map((d) => ({
+            key: d.id,
+            cells: [
+              d.title,
+              d.instrument ? <Link href={`/instruments/${d.instrument.id}`}>{d.instrument.type}</Link> : "—",
+              d.versions[0]?.status ?? "—",
+              d.versions[0]?.storageUrl ? (
+                <a href={d.versions[0].storageUrl} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+              ) : (
+                "—"
+              ),
+            ],
+          }))}
+        />
       )}
     </main>
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
 const instrumentCardStyle: React.CSSProperties = {
   border: `1px solid ${theme.border}`,
   borderRadius: 4,

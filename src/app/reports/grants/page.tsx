@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { theme } from "@/lib/theme";
 import { getGrantsReport } from "@/lib/db/grantsReport";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
+import { ListingTable } from "@/app/components/ListingTable";
 
 /**
  * Grants report — "the strike price needs to be maintained... as part of a grants
@@ -57,79 +58,67 @@ export default async function GrantsReportPage({ searchParams }: { searchParams:
       {entries.length === 0 ? (
         <p>No stock option, RSU, or restricted stock grants recorded for this entity yet.</p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.85rem" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Grant ID</th>
-                <th style={cellStyle}>Type</th>
-                <th style={cellStyle}>Grantee</th>
-                <th style={cellStyle}>Grant date</th>
-                <th style={cellStyle}>Quantity</th>
-                <th style={cellStyle}>Strike price</th>
-                <th style={cellStyle}>Grant-date FV/unit</th>
-                <th style={cellStyle}>Total FV</th>
-                <th style={cellStyle}>Purchase price</th>
-                <th style={cellStyle}>Attribution</th>
-                <th style={cellStyle}>Vesting</th>
-                <th style={cellStyle}>Service period ends</th>
-                <th style={cellStyle}>Approval</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.instrumentId}>
-                  <td style={{ ...cellStyle, fontFamily: theme.font.mono, fontSize: "0.75rem" }}>
-                    <Link href={`/instruments/${e.instrumentId}`}>{e.instrumentId.slice(0, 10)}…</Link>
-                  </td>
-                  <td style={cellStyle}>{e.instrumentType}</td>
-                  <td style={cellStyle}>{e.stakeholderName}</td>
-                  <td style={cellStyle}>{e.grantDate}</td>
-                  <td style={cellStyle}>{Number(e.quantity).toLocaleString()}</td>
-                  <td style={cellStyle}>{e.strikePrice ?? "—"}</td>
-                  <td style={cellStyle}>{e.grantDateFairValuePerUnit}</td>
-                  <td style={cellStyle}>{e.totalGrantDateFairValue}</td>
-                  <td style={cellStyle}>{e.purchasePricePerShare ?? "—"}</td>
-                  <td style={cellStyle}>{e.attributionMethod}</td>
-                  <td style={cellStyle}>
-                    <ul style={{ margin: 0, paddingLeft: "1rem" }}>
-                      {e.tranches.map((t, i) => (
-                        <li key={i}>
-                          {t.vestDate}: {Number(t.quantity).toLocaleString()}
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-                  <td style={cellStyle}>
-                    {e.servicePeriodEndDate ? (
-                      <span title={`Last vesting tranche: ${e.lastVestDate}`}>
-                        {e.servicePeriodEndDate}{" "}
-                        <span style={{ color: theme.inkMuted, fontSize: "0.75rem" }}>(vests {e.lastVestDate})</span>
-                      </span>
-                    ) : (
-                      <span style={{ color: theme.inkMuted }}>same as vesting ({e.lastVestDate})</span>
-                    )}
-                  </td>
-                  <td
-                    style={{
-                      ...cellStyle,
-                      color: e.approvalStatus === "approved" ? theme.success.fg : e.approvalStatus === "stale" ? theme.warning.fg : theme.inkMuted,
-                    }}
-                  >
-                    {e.approvalStatus === "approved"
-                      ? `Approved${e.approvedAt ? ` (${e.approvedAt})` : ""}`
-                      : e.approvalStatus === "stale"
-                        ? "Stale — re-approve"
-                        : "Not approved"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ListingTable
+          columns={[
+            { label: "Grant ID" },
+            { label: "Type" },
+            { label: "Grantee" },
+            { label: "Grant date" },
+            { label: "Quantity", align: "right" },
+            { label: "Strike price", align: "right" },
+            { label: "Grant-date FV/unit", align: "right" },
+            { label: "Total FV", align: "right" },
+            { label: "Purchase price", align: "right" },
+            { label: "Attribution" },
+            { label: "Vesting" },
+            { label: "Service period ends" },
+            { label: "Approval" },
+          ]}
+          rows={entries.map((e) => ({
+            key: e.instrumentId,
+            cells: [
+              <Link href={`/instruments/${e.instrumentId}`} style={{ fontFamily: theme.font.mono, fontSize: "0.75rem" }}>
+                {e.instrumentId.slice(0, 10)}…
+              </Link>,
+              e.instrumentType,
+              e.stakeholderName,
+              e.grantDate,
+              Number(e.quantity).toLocaleString(),
+              e.strikePrice ?? "—",
+              e.grantDateFairValuePerUnit,
+              e.totalGrantDateFairValue,
+              e.purchasePricePerShare ?? "—",
+              e.attributionMethod,
+              <ul style={{ margin: 0, paddingLeft: "1rem" }}>
+                {e.tranches.map((t, i) => (
+                  <li key={i}>
+                    {t.vestDate}: {Number(t.quantity).toLocaleString()}
+                  </li>
+                ))}
+              </ul>,
+              e.servicePeriodEndDate ? (
+                <span title={`Last vesting tranche: ${e.lastVestDate}`}>
+                  {e.servicePeriodEndDate}{" "}
+                  <span style={{ color: theme.inkMuted, fontSize: "0.75rem" }}>(vests {e.lastVestDate})</span>
+                </span>
+              ) : (
+                <span style={{ color: theme.inkMuted }}>same as vesting ({e.lastVestDate})</span>
+              ),
+              <span
+                style={{
+                  color: e.approvalStatus === "approved" ? theme.success.fg : e.approvalStatus === "stale" ? theme.warning.fg : theme.inkMuted,
+                }}
+              >
+                {e.approvalStatus === "approved"
+                  ? `Approved${e.approvedAt ? ` (${e.approvedAt})` : ""}`
+                  : e.approvalStatus === "stale"
+                    ? "Stale — re-approve"
+                    : "Not approved"}
+              </span>,
+            ],
+          }))}
+        />
       )}
     </main>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left", verticalAlign: "top" };

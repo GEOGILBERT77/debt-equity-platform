@@ -3,6 +3,7 @@
 import { useState } from "react";
 import WaterfallSensitivityChart, { SensitivityChartPoint, SensitivityChartClass } from "./WaterfallSensitivityChart";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "./ListingTable";
 
 /**
  * v0.32.0 — "a line graph of payouts by share classes and stakeholders across a range
@@ -90,38 +91,23 @@ export default function WaterfallSensitivityAnalysis({
 
       <details style={{ marginTop: "0.75rem" }}>
         <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: theme.inkMuted }}>Show exact figures for every point</summary>
-        <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Exit proceeds</th>
-                {classes.map((c) => (
-                  <th key={c.id} style={cellStyle}>
-                    {c.name}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {points.map((p, i) => (
-                <tr key={i}>
-                  <td style={cellStyle}>${Number(p.exitProceeds).toLocaleString()}</td>
-                  {classes.map((c) => (
-                    <td key={c.id} style={cellStyle}>
-                      ${Number(p.classResults.find((cr) => cr.id === c.id)?.totalProceeds ?? 0).toLocaleString()}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ marginTop: "0.5rem" }}>
+          <ListingTable
+            columns={[{ label: "Exit proceeds", align: "right" }, ...classes.map((c) => ({ label: c.name, align: "right" as const }))]}
+            rows={points.map((p, i) => ({
+              key: i,
+              cells: [
+                `$${Number(p.exitProceeds).toLocaleString()}`,
+                ...classes.map((c) => `$${Number(p.classResults.find((cr) => cr.id === c.id)?.totalProceeds ?? 0).toLocaleString()}`),
+              ],
+            }))}
+          />
         </div>
       </details>
     </div>
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left" };
 const inputStyle: React.CSSProperties = { padding: "0.25rem", width: 130 };
 const smallButtonStyle: React.CSSProperties = {
   padding: "0.25rem 0.6rem",

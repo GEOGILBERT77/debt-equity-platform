@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { smallButtonStyle, removeButtonStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "./ListingTable";
 
 export interface WaterfallClassSummary {
   id: string;
@@ -114,44 +115,33 @@ export default function CapTableWaterfallCalculator({
         across different exit outcomes — the class stack (seniority, preference, participation) below is fixed for
         every scenario; only the exit proceeds changes.
       </p>
-      <table style={{ borderCollapse: "collapse", width: "100%", margin: "1rem 0" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Scenario label</th>
-            <th style={cellStyle}>Exit proceeds ($)</th>
-            <th style={cellStyle}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {scenarios.map((s) => (
-            <tr key={s.id}>
-              <td style={cellStyle}>
-                <input
-                  style={inputStyle}
-                  value={s.label}
-                  onChange={(e) => updateScenario(s.id, { label: e.target.value })}
-                  placeholder="e.g. Base case"
-                />
-              </td>
-              <td style={cellStyle}>
-                <input
-                  style={inputStyle}
-                  value={s.exitProceeds}
-                  onChange={(e) => updateScenario(s.id, { exitProceeds: e.target.value })}
-                  placeholder="e.g. 50000000"
-                />
-              </td>
-              <td style={cellStyle}>
-                {scenarios.length > 1 && (
-                  <button type="button" style={removeButtonStyle} onClick={() => setScenarios((prev) => prev.filter((x) => x.id !== s.id))}>
-                    Remove
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ margin: "1rem 0" }}>
+        <ListingTable
+          columns={[{ label: "Scenario label" }, { label: "Exit proceeds ($)" }, { label: "" }]}
+          rows={scenarios.map((s) => ({
+            key: s.id,
+            cells: [
+              <input
+                style={inputStyle}
+                value={s.label}
+                onChange={(e) => updateScenario(s.id, { label: e.target.value })}
+                placeholder="e.g. Base case"
+              />,
+              <input
+                style={inputStyle}
+                value={s.exitProceeds}
+                onChange={(e) => updateScenario(s.id, { exitProceeds: e.target.value })}
+                placeholder="e.g. 50000000"
+              />,
+              scenarios.length > 1 && (
+                <button type="button" style={removeButtonStyle} onClick={() => setScenarios((prev) => prev.filter((x) => x.id !== s.id))}>
+                  Remove
+                </button>
+              ),
+            ],
+          }))}
+        />
+      </div>
       <button
         type="button"
         style={smallButtonStyle}
@@ -168,45 +158,38 @@ export default function CapTableWaterfallCalculator({
       {results && results.length > 1 && (
         <>
           <h2>Scenario comparison</h2>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr>
-                  <th style={cellStyle}>Class</th>
-                  {results.map((r) => (
-                    <th key={r.label} style={cellStyle}>
-                      {r.label}
-                      <br />
-                      <span style={{ fontWeight: "normal", color: theme.inkMuted }}>(${r.exitProceeds})</span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {classes.map((c) => (
-                  <tr key={c.id}>
-                    <td style={cellStyle}>{c.name}</td>
-                    {results.map((r) => {
-                      const cr = r.classResults.find((x) => x.id === c.id);
-                      return (
-                        <td key={r.label} style={cellStyle}>
-                          {cr ? cr.totalProceeds : "—"}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-                <tr>
-                  <td style={{ ...cellStyle, fontWeight: "bold" }}>Total distributed</td>
-                  {results.map((r) => (
-                    <td key={r.label} style={{ ...cellStyle, fontWeight: "bold" }}>
-                      {r.totalDistributed}
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <ListingTable
+            columns={[
+              { label: "Class" },
+              ...results.map((r) => ({
+                label: (
+                  <>
+                    {r.label}
+                    <br />
+                    <span style={{ fontWeight: "normal", color: theme.inkMuted, textTransform: "none" as const }}>(${r.exitProceeds})</span>
+                  </>
+                ),
+                align: "right" as const,
+              })),
+            ]}
+            rows={[
+              ...classes.map((c) => ({
+                key: c.id,
+                cells: [
+                  c.name,
+                  ...results.map((r) => {
+                    const cr = r.classResults.find((x) => x.id === c.id);
+                    return cr ? cr.totalProceeds : "—";
+                  }),
+                ],
+              })),
+              {
+                key: "total",
+                highlight: true,
+                cells: ["Total distributed", ...results.map((r) => r.totalDistributed)],
+              },
+            ]}
+          />
         </>
       )}
 
@@ -215,32 +198,29 @@ export default function CapTableWaterfallCalculator({
           <div key={r.label} style={{ marginTop: "1.5rem" }}>
             <h2>{results.length > 1 ? `${r.label} — detail` : "Results"}</h2>
             <p style={{ color: theme.inkMuted, fontSize: "0.9rem" }}>Exit proceeds: ${r.exitProceeds}</p>
-            <table style={{ borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr>
-                  <th style={cellStyle}>Class</th>
-                  <th style={cellStyle}>Converted?</th>
-                  <th style={cellStyle}>Capped?</th>
-                  <th style={cellStyle}>From preference</th>
-                  <th style={cellStyle}>From residual</th>
-                  <th style={cellStyle}>Total</th>
-                  <th style={cellStyle}>Per share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {r.classResults.map((cr) => (
-                  <tr key={cr.id}>
-                    <td style={cellStyle}>{cr.name}</td>
-                    <td style={cellStyle}>{cr.converted ? "Yes" : "No"}</td>
-                    <td style={cellStyle}>{cr.cappedByParticipation ? "Yes" : "No"}</td>
-                    <td style={cellStyle}>{cr.proceedsFromPreference}</td>
-                    <td style={cellStyle}>{cr.proceedsFromResidual}</td>
-                    <td style={cellStyle}>{cr.totalProceeds}</td>
-                    <td style={cellStyle}>{cr.perShareProceeds}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ListingTable
+              columns={[
+                { label: "Class" },
+                { label: "Converted?" },
+                { label: "Capped?" },
+                { label: "From preference", align: "right" },
+                { label: "From residual", align: "right" },
+                { label: "Total", align: "right" },
+                { label: "Per share", align: "right" },
+              ]}
+              rows={r.classResults.map((cr) => ({
+                key: cr.id,
+                cells: [
+                  cr.name,
+                  cr.converted ? "Yes" : "No",
+                  cr.cappedByParticipation ? "Yes" : "No",
+                  cr.proceedsFromPreference,
+                  cr.proceedsFromResidual,
+                  cr.totalProceeds,
+                  cr.perShareProceeds,
+                ],
+              }))}
+            />
             <p>
               Total distributed: {r.totalDistributed}
               {Number(r.undistributed) !== 0 && (
@@ -256,5 +236,4 @@ export default function CapTableWaterfallCalculator({
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left" };
 const inputStyle: React.CSSProperties = { width: "100%", padding: "0.25rem", fontSize: "0.85rem" };

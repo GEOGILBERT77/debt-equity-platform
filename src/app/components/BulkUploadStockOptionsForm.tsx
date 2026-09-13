@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { ApproveAllAmortizationSchedulesButton } from "@/app/components/ApproveAllAmortizationSchedulesButton";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "@/app/components/ListingTable";
 
 type RowResult = { rowNumber: number; status: "created" | "error"; granteeName?: string; message?: string };
 type UploadResponse = { totalRows: number; createdCount: number; errorCount: number; results: RowResult[] };
@@ -82,26 +83,19 @@ export function BulkUploadStockOptionsForm({ entityId, type }: { entityId: strin
             {result.createdCount} of {result.totalRows} row(s) created
             {result.errorCount > 0 && `, ${result.errorCount} failed`}.
           </p>
-          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9rem" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Row</th>
-                <th style={cellStyle}>Grantee</th>
-                <th style={cellStyle}>Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.results.map((r) => (
-                <tr key={r.rowNumber}>
-                  <td style={cellStyle}>{r.rowNumber}</td>
-                  <td style={cellStyle}>{r.granteeName ?? "—"}</td>
-                  <td style={{ ...cellStyle, color: r.status === "created" ? theme.success.fg : theme.danger.fg }}>
-                    {r.status === "created" ? "Created" : r.message}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ListingTable
+            columns={[{ label: "Row", align: "right" }, { label: "Grantee" }, { label: "Result" }]}
+            rows={result.results.map((r) => ({
+              key: r.rowNumber,
+              cells: [
+                r.rowNumber,
+                r.granteeName ?? "—",
+                <span style={{ color: r.status === "created" ? theme.success.fg : theme.danger.fg }}>
+                  {r.status === "created" ? "Created" : r.message}
+                </span>,
+              ],
+            }))}
+          />
           {result.createdCount > 0 && (
             <div style={{ marginTop: "1rem", padding: "0.75rem", border: `1px solid ${theme.border}`, borderRadius: 4 }}>
               <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>Next step: review and approve this batch</p>
@@ -125,4 +119,3 @@ const buttonStyle: React.CSSProperties = {
   background: theme.surfaceAlt,
   cursor: "pointer",
 };
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left" };

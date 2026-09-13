@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { theme } from "@/lib/theme";
+import { ListingTable, ListingTableColumn } from "./ListingTable";
 
 export interface BreakpointsClassSummary {
   id: string;
@@ -83,26 +84,25 @@ export default function WaterfallBreakpoints({
         value at which a non-participating class flips from taking its stated preference to converting to common, or
         a participation cap kicks in. A blank cell means that transition doesn't occur below the search ceiling.
       </p>
-      <table style={{ borderCollapse: "collapse", width: "100%", margin: "0.75rem 0" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Class</th>
-            <th style={cellStyle}>Breakeven (starts receiving proceeds)</th>
-            {showConversionCol && <th style={cellStyle}>Converts to common above</th>}
-            {showCapCol && <th style={cellStyle}>Participation cap binds above</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {breakpoints.map((b) => (
-            <tr key={b.id}>
-              <td style={cellStyle}>{b.name}</td>
-              <td style={cellStyle}>{fmt(b.breakevenExitProceeds)}</td>
-              {showConversionCol && <td style={cellStyle}>{fmt(b.conversionBreakpointExitProceeds)}</td>}
-              {showCapCol && <td style={cellStyle}>{fmt(b.participationCapBreakpointExitProceeds)}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ margin: "0.75rem 0" }}>
+        <ListingTable
+          columns={[
+            { label: "Class" },
+            { label: "Breakeven (starts receiving proceeds)", align: "right" },
+            ...(showConversionCol ? [{ label: "Converts to common above", align: "right" as const }] : []),
+            ...(showCapCol ? [{ label: "Participation cap binds above", align: "right" as const }] : []),
+          ] satisfies ListingTableColumn[]}
+          rows={breakpoints.map((b) => ({
+            key: b.id,
+            cells: [
+              b.name,
+              fmt(b.breakevenExitProceeds),
+              ...(showConversionCol ? [fmt(b.conversionBreakpointExitProceeds)] : []),
+              ...(showCapCol ? [fmt(b.participationCapBreakpointExitProceeds)] : []),
+            ],
+          }))}
+        />
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
         <label>
           Search ceiling ($){" "}
@@ -122,7 +122,6 @@ export default function WaterfallBreakpoints({
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left" };
 const smallButtonStyle: React.CSSProperties = {
   padding: "0.25rem 0.6rem",
   border: `1px solid ${theme.border}`,

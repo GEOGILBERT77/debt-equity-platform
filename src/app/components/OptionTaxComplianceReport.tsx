@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DecimalField, DateField, smallButtonStyle, labelStyle, inputStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "./ListingTable";
 
 /** FieldPrimitives.tsx's own SelectField is generic over a plain `readonly T[]` of
  * option VALUES, rendered as their own display text — it has no room for a separate
@@ -156,68 +157,54 @@ export default function OptionTaxComplianceReport({
       )}
 
       {rows && (
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "2rem" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Filing</th>
-              <th style={cellStyle}>Tax year</th>
-              <th style={cellStyle}>Description</th>
-              <th style={cellStyle}>Amount</th>
-              <th style={cellStyle}>Deadline</th>
-              <th style={cellStyle}>Status</th>
-              <th style={cellStyle}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td style={cellStyle} colSpan={7}>
-                  No filing obligations on file yet — record an option exercise below to get started.
-                </td>
-              </tr>
-            )}
-            {rows.map((r, i) => (
-              <tr
-                key={`${r.exerciseEventId ?? r.instrumentId}-${r.filingType}-${r.taxYear}-${i}`}
-                style={{ background: r.overdue && r.status === "PENDING" ? theme.danger.bg : r.dueThisMonth ? theme.warning.bg : undefined }}
-              >
-                <td style={cellStyle}>{FILING_TYPE_LABELS[r.filingType]}</td>
-                <td style={cellStyle}>{r.taxYear}</td>
-                <td style={cellStyle}>{r.description}</td>
-                <td style={cellStyle}>{r.amount ? `$${Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"}</td>
-                <td style={cellStyle}>
+        <div style={{ marginBottom: "2rem" }}>
+          <ListingTable
+            emptyMessage="No filing obligations on file yet — record an option exercise below to get started."
+            columns={[
+              { label: "Filing" },
+              { label: "Tax year" },
+              { label: "Description" },
+              { label: "Amount", align: "right" },
+              { label: "Deadline" },
+              { label: "Status" },
+              { label: "" },
+            ]}
+            rows={rows.map((r, i) => ({
+              key: `${r.exerciseEventId ?? r.instrumentId}-${r.filingType}-${r.taxYear}-${i}`,
+              cells: [
+                FILING_TYPE_LABELS[r.filingType],
+                r.taxYear,
+                r.description,
+                r.amount ? `$${Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—",
+                <>
                   {r.deadline ?? "—"}
                   {r.overdue && r.status === "PENDING" && <div style={{ color: theme.danger.fg, fontSize: "0.8rem" }}>Overdue</div>}
                   {!r.overdue && r.dueThisMonth && r.status === "PENDING" && (
                     <div style={{ color: theme.warning.fg, fontSize: "0.8rem" }}>Due this month</div>
                   )}
-                </td>
-                <td style={cellStyle}>
-                  {r.taxFilingRecordId ? (
-                    <select
-                      value={r.status}
-                      onChange={(e) => markStatus(r.taxFilingRecordId as string, e.target.value as ReportRow["status"])}
-                      style={{ padding: "0.25rem" }}
-                    >
-                      <option value="PENDING">Pending</option>
-                      <option value="FILED">Filed</option>
-                      <option value="NOT_REQUIRED">Not required</option>
-                    </select>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td style={cellStyle}>
-                  {r.filingType === "FORM_3921" && r.taxFilingRecordId && (
-                    <a href={`/api/tax-filing-records/${r.taxFilingRecordId}/form-3921`} style={smallButtonStyle}>
-                      Download Form 3921
-                    </a>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </>,
+                r.taxFilingRecordId ? (
+                  <select
+                    value={r.status}
+                    onChange={(e) => markStatus(r.taxFilingRecordId as string, e.target.value as ReportRow["status"])}
+                    style={{ padding: "0.25rem" }}
+                  >
+                    <option value="PENDING">Pending</option>
+                    <option value="FILED">Filed</option>
+                    <option value="NOT_REQUIRED">Not required</option>
+                  </select>
+                ) : (
+                  "—"
+                ),
+                r.filingType === "FORM_3921" && r.taxFilingRecordId && (
+                  <a href={`/api/tax-filing-records/${r.taxFilingRecordId}/form-3921`} style={smallButtonStyle}>
+                    Download Form 3921
+                  </a>
+                ),
+              ],
+            }))}
+          />
+        </div>
       )}
 
       <RecordExerciseForm instruments={instruments} onRecorded={() => runReport(targetMonth)} />
@@ -372,5 +359,3 @@ function RecordDispositionForm({ instruments, onRecorded }: { instruments: Instr
     </fieldset>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left", verticalAlign: "top" };

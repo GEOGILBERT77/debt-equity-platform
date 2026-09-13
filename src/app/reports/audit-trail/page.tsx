@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { buildAuditTrail, summarizeAttributionCoverage, AuditTrailInput } from "@/lib/accounting/auditTrail";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
+import { ListingTable } from "@/app/components/ListingTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -109,35 +110,22 @@ export default async function AuditTrailPage({ searchParams }: { searchParams: {
       {trail.length === 0 ? (
         <p>No terms history or corrections recorded yet.</p>
       ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Date</th>
-              <th style={cellStyle}>Kind</th>
-              <th style={cellStyle}>Instrument</th>
-              <th style={cellStyle}>Who</th>
-              <th style={cellStyle}>Summary</th>
-            </tr>
-          </thead>
-          <tbody>
-            {trail.map((e, i) => (
-              <tr key={i}>
-                <td style={cellStyle}>{e.date}</td>
-                <td style={cellStyle}>{e.kind === "TERM_VERSION" ? "Terms" : "Correction"}</td>
-                <td style={cellStyle}>
-                  <Link href={`/instruments/${e.instrumentId}`}>
-                    {e.stakeholderName} ({e.instrumentType})
-                  </Link>
-                </td>
-                <td style={cellStyle}>{e.userEmail ?? "unknown"}</td>
-                <td style={cellStyle}>{e.summary}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ListingTable
+          columns={[{ label: "Date" }, { label: "Kind" }, { label: "Instrument" }, { label: "Who" }, { label: "Summary" }]}
+          rows={trail.map((e, i) => ({
+            key: i,
+            cells: [
+              e.date,
+              e.kind === "TERM_VERSION" ? "Terms" : "Correction",
+              <Link href={`/instruments/${e.instrumentId}`}>
+                {e.stakeholderName} ({e.instrumentType})
+              </Link>,
+              e.userEmail ?? "unknown",
+              e.summary,
+            ],
+          }))}
+        />
       )}
     </main>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

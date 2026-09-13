@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DecimalField, DateField, SelectField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "./ListingTable";
 
 type Mode = "CASH_EXERCISE" | "NET_SHARE_SETTLEMENT" | "TAX_WITHHOLDING_REMITTANCE";
 
@@ -162,28 +163,12 @@ export default function SettlementCalculator() {
             <strong>{result.date}</strong> — {result.description}
             {result.ascReference && <span style={{ color: theme.inkMuted }}> ({result.ascReference})</span>}
           </p>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Account</th>
-                <th style={cellStyle}>Debit</th>
-                <th style={cellStyle}>Credit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.lines.map((l, i) => (
-                <tr key={i}>
-                  <td style={cellStyle}>{l.account}</td>
-                  <td style={cellStyle}>{l.debit ?? ""}</td>
-                  <td style={cellStyle}>{l.credit ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ListingTable
+            columns={[{ label: "Account" }, { label: "Debit", align: "right" }, { label: "Credit", align: "right" }]}
+            rows={result.lines.map((l, i) => ({ key: i, cells: [l.account, l.debit ?? "", l.credit ?? ""] }))}
+          />
         </>
       )}
     </div>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };

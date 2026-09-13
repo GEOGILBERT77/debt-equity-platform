@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getModificationAuditReport } from "@/lib/db/modificationAudit";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "@/app/components/ListingTable";
 
 /**
  * Modification audit report — "there needs to be an audit report of all
@@ -112,70 +113,62 @@ export default async function ModificationAuditPage({
       {entries.length === 0 ? (
         <p>No modifications recorded in this range.</p>
       ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9rem" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Modified on</th>
-              <th style={cellStyle}>Instrument</th>
-              <th style={cellStyle}>Effective</th>
-              <th style={cellStyle}>Who</th>
-              <th style={cellStyle}>Terms changed</th>
-              <th style={cellStyle}>Impact</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e) => (
-              <tr key={e.termVersionId}>
-                <td style={cellStyle}>{e.modificationDate}</td>
-                <td style={cellStyle}>
-                  <Link href={`/instruments/${e.instrumentId}`}>
-                    {e.stakeholderName} ({e.instrumentType})
-                  </Link>
-                  <div style={{ color: theme.inkMuted, fontSize: "0.8rem" }}>{e.label}</div>
-                </td>
-                <td style={cellStyle}>{e.effectiveDate}</td>
-                <td style={cellStyle}>{e.modifiedByUserEmail ?? "unknown"}</td>
-                <td style={cellStyle}>
-                  {e.changedFields.length === 0 ? (
-                    <span style={{ color: theme.inkMuted }}>No terms fields changed</span>
-                  ) : (
-                    <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
-                      {e.changedFields.map((c) => (
-                        <li key={c.field}>
-                          <strong>{c.field}</strong>: {c.before} &rarr; {c.after}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </td>
-                <td style={cellStyle}>
-                  {e.impactApplicable ? (
-                    <>
-                      {e.totalBeforeAmount} &rarr; {e.totalAfterAmount}
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          color: Number(e.totalDelta) === 0 ? "inherit" : Number(e.totalDelta) > 0 ? theme.success.fg : theme.warning.fg,
-                        }}
-                      >
-                        {Number(e.totalDelta) > 0 ? "+" : ""}
-                        {e.totalDelta}
-                      </div>
-                    </>
-                  ) : (
-                    <span style={{ color: theme.inkMuted, fontSize: "0.85rem" }}>{e.impactMessage}</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ListingTable
+          columns={[
+            { label: "Modified on" },
+            { label: "Instrument" },
+            { label: "Effective" },
+            { label: "Who" },
+            { label: "Terms changed" },
+            { label: "Impact" },
+          ]}
+          rows={entries.map((e) => ({
+            key: e.termVersionId,
+            cells: [
+              e.modificationDate,
+              <>
+                <Link href={`/instruments/${e.instrumentId}`}>
+                  {e.stakeholderName} ({e.instrumentType})
+                </Link>
+                <div style={{ color: theme.inkMuted, fontSize: "0.8rem" }}>{e.label}</div>
+              </>,
+              e.effectiveDate,
+              e.modifiedByUserEmail ?? "unknown",
+              e.changedFields.length === 0 ? (
+                <span style={{ color: theme.inkMuted }}>No terms fields changed</span>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                  {e.changedFields.map((c) => (
+                    <li key={c.field}>
+                      <strong>{c.field}</strong>: {c.before} &rarr; {c.after}
+                    </li>
+                  ))}
+                </ul>
+              ),
+              e.impactApplicable ? (
+                <>
+                  {e.totalBeforeAmount} &rarr; {e.totalAfterAmount}
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      color: Number(e.totalDelta) === 0 ? "inherit" : Number(e.totalDelta) > 0 ? theme.success.fg : theme.warning.fg,
+                    }}
+                  >
+                    {Number(e.totalDelta) > 0 ? "+" : ""}
+                    {e.totalDelta}
+                  </div>
+                </>
+              ) : (
+                <span style={{ color: theme.inkMuted, fontSize: "0.85rem" }}>{e.impactMessage}</span>
+              ),
+            ],
+          }))}
+        />
       )}
     </main>
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left", verticalAlign: "top" };
 const labelStyle: React.CSSProperties = { display: "flex", flexDirection: "column", fontSize: "0.85rem", gap: "0.25rem" };
 const inputStyle: React.CSSProperties = { padding: "0.35rem" };
 const buttonStyle: React.CSSProperties = {

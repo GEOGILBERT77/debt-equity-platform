@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DecimalField, DateField, TextField, SelectField, smallButtonStyle, hintStyle, fieldsetStyle, legendStyle } from "./termsFields/FieldPrimitives";
 import { theme } from "@/lib/theme";
+import { ListingTable } from "./ListingTable";
 
 type Mode = "TEST" | "EXTINGUISHMENT_ENTRY" | "MODIFICATION_LENDER_FEE_ENTRY" | "THIRD_PARTY_COST_ENTRY";
 
@@ -235,28 +236,12 @@ export default function DebtModificationCalculator() {
               {Number(gainOrLoss) < 0 ? "Loss" : "Gain"} on extinguishment: ${Math.abs(Number(gainOrLoss)).toFixed(2)}
             </p>
           )}
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Account</th>
-                <th style={cellStyle}>Debit</th>
-                <th style={cellStyle}>Credit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entryResult.lines.map((l, i) => (
-                <tr key={i}>
-                  <td style={cellStyle}>{l.account}</td>
-                  <td style={cellStyle}>{l.debit ?? ""}</td>
-                  <td style={cellStyle}>{l.credit ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ListingTable
+            columns={[{ label: "Account" }, { label: "Debit", align: "right" }, { label: "Credit", align: "right" }]}
+            rows={entryResult.lines.map((l, i) => ({ key: i, cells: [l.account, l.debit ?? "", l.credit ?? ""] }))}
+          />
         </>
       )}
     </div>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem" };

@@ -1,11 +1,14 @@
 import Link from "next/link";
-import { Fragment } from "react";
 import { db } from "@/lib/db";
 import { computeVisibleSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { buildCapTableRollup, aggregateByStakeholder, CapTableInstrumentInput } from "@/lib/accounting/capTable";
+import { classKeyForInstrument, buildCapTableGroupings } from "@/lib/accounting/capTableGrouping";
 import { requireCurrentPortalUser, requirePortalStakeholderAccess } from "@/lib/auth/portalPageGuard";
 import { listAccessibleStakeholders } from "@/lib/auth/portalAuthGuard";
 import { PortalLogoutButton } from "@/app/components/PortalLogoutButton";
+import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
+import { CapTableOwnershipTable } from "@/app/components/CapTableOwnershipTable";
+import { ListingTable, spanCell } from "@/app/components/ListingTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -105,6 +108,7 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
   // history — a different shape for a different purpose).
   let boardRollup: ReturnType<typeof buildCapTableRollup> | null = null;
   let boardOwnership: ReturnType<typeof aggregateByStakeholder> | null = null;
+  let boardGroupings: ReturnType<typeof buildCapTableGroupings> | null = null;
   if (grant.boardObserver) {
     const allStakeholders = await db.stakeholder.findMany({
       where: { entityId: stakeholder.entityId },
@@ -112,15 +116,21 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
       orderBy: { name: "asc" },
     });
     const boardRollupInputs: CapTableInstrumentInput[] = [];
+    // See classKeyForInstrument's doc comment (capTableGrouping.ts) — same "By
+    // Instrument/Class" grouping the admin cap table uses, so a board observer sees
+    // the identical breakdown an admin would, not a second, differently-shaped view.
+    const boardClassKeyByInstrumentId = new Map<string, { key: string; displayLabel: string }>();
     for (const s of allStakeholders) {
       for (const inst of s.instruments) {
         const latestTerms = inst.termVersions[0]?.terms;
         if (latestTerms === undefined) continue;
+        const type = inst.type as InstrumentTypeForDispatch;
+        boardClassKeyByInstrumentId.set(inst.id, classKeyForInstrument(type, inst.termVersions[0]?.label ?? "", latestTerms));
         boardRollupInputs.push({
           instrumentId: inst.id,
           stakeholderId: s.id,
           stakeholderName: s.name,
-          type: inst.type as InstrumentTypeForDispatch,
+          type,
           terms: latestTerms,
           // Deliberately omitted: live-computed outstanding debt balance. Getting that
           // right requires running computeVisibleSchedule per debt instrument (see
@@ -133,6 +143,14 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
     }
     boardRollup = buildCapTableRollup(boardRollupInputs);
     boardOwnership = aggregateByStakeholder(boardRollup);
+    // No stakeholderHref here, deliberately — see buildCapTableGroupings's doc
+    // comment: a board-observer portal user has no business being sent into the
+    // ADMIN-only /stakeholders/[id] route, so investor names in this view aren't links.
+    boardGroupings = buildCapTableGroupings({
+      rollup: boardRollup,
+      ownershipByStakeholder: boardOwnership,
+      classKeyByInstrumentId: boardClassKeyByInstrumentId,
+    });
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -194,26 +212,13 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
               <p style={{ color: theme.inkMuted }}>No periodic vesting schedule applies to this holding.</p>
             )}
             {!scheduleResult.error && scheduleResult.rows.length > 0 && (
-              <div style={{ overflowX: "auto" }}>
-                <table style={tableStyle}>
-                  <thead>
-                    <tr>
-                      <th style={cellStyle}>Period</th>
-                      <th style={cellStyle}>Amount</th>
-                      <th style={cellStyle}>Ending balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scheduleResult.rows.map((row, i) => (
-                      <tr key={i}>
-                        <td style={cellStyle}>{row.label}</td>
-                        <td style={{ ...cellStyle, fontFamily: theme.font.mono }}>{row.amount.toFixed(2)}</td>
-                        <td style={{ ...cellStyle, fontFamily: theme.font.mono }}>{row.endingBalance?.toFixed(2) ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ScheduleGridTable
+                columns={[{ label: "Period" }, { label: "Amount", align: "right" }, { label: "Ending balance", align: "right" }]}
+                rows={scheduleResult.rows.map((row, i) => ({
+                  key: i,
+                  cells: [row.label, row.amount.toFixed(2), row.endingBalance?.toFixed(2) ?? "—"],
+                }))}
+              />
             )}
 
             {inst.type === "STOCK_OPTION" && (
@@ -221,41 +226,38 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
                 <h4 style={{ margin: "0.75rem 0 0.25rem" }}>Exercise history</h4>
                 {exercises.length === 0 && <p style={{ color: theme.inkMuted }}>No exercises recorded yet.</p>}
                 {exercises.length > 0 && (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={cellStyle}>Exercise date</th>
-                          <th style={cellStyle}>Quantity</th>
-                          <th style={cellStyle}>Strike price</th>
-                          <th style={cellStyle}>FMV at exercise</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {exercises.map((e) => (
-                          <Fragment key={e.id}>
-                            <tr>
-                              <td style={cellStyle}>{e.exerciseDate.toISOString().slice(0, 10)}</td>
-                              <td style={{ ...cellStyle, fontFamily: theme.font.mono }}>{e.quantityExercised.toString()}</td>
-                              <td style={{ ...cellStyle, fontFamily: theme.font.mono }}>{e.exercisePricePerShare.toString()}</td>
-                              <td style={{ ...cellStyle, fontFamily: theme.font.mono }}>{e.fairMarketValuePerShareAtExercise.toString()}</td>
-                            </tr>
-                            {e.dispositions.map((d) => (
-                              <tr key={d.id}>
-                                <td style={{ ...cellStyle, color: theme.inkMuted, paddingLeft: "1.5rem" }}>
-                                  ↳ sold {d.dispositionDate.toISOString().slice(0, 10)}
-                                </td>
-                                <td style={{ ...cellStyle, fontFamily: theme.font.mono, color: theme.inkMuted }}>{d.quantitySold.toString()}</td>
-                                <td style={{ ...cellStyle, color: theme.inkMuted }} colSpan={2}>
-                                  at {d.salePricePerShare.toString()}/share
-                                </td>
-                              </tr>
-                            ))}
-                          </Fragment>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <ListingTable
+                    columns={[
+                      { label: "Exercise date" },
+                      { label: "Quantity", align: "right" },
+                      { label: "Strike price", align: "right" },
+                      { label: "FMV at exercise", align: "right" },
+                    ]}
+                    rows={exercises.flatMap((e) => [
+                      {
+                        key: e.id,
+                        cells: [
+                          e.exerciseDate.toISOString().slice(0, 10),
+                          e.quantityExercised.toString(),
+                          e.exercisePricePerShare.toString(),
+                          e.fairMarketValuePerShareAtExercise.toString(),
+                        ],
+                      },
+                      ...e.dispositions.map((d) => ({
+                        key: d.id,
+                        cells: [
+                          <span style={{ color: theme.inkMuted, paddingLeft: "1.5rem" }}>
+                            ↳ sold {d.dispositionDate.toISOString().slice(0, 10)}
+                          </span>,
+                          <span style={{ color: theme.inkMuted }}>{d.quantitySold.toString()}</span>,
+                          spanCell(
+                            <span style={{ color: theme.inkMuted }}>at {d.salePricePerShare.toString()}/share</span>,
+                            2
+                          ),
+                        ],
+                      })),
+                    ])}
+                  />
                 )}
               </>
             )}
@@ -291,36 +293,14 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
             diluted ownership in {stakeholder.entity.name}, not just your own holdings above. Computed live as
             of today, same as the admin cap table view.
           </p>
-          {boardRollup.totalFullyDilutedShares.toString() === "0" ? (
+          {boardRollup.totalFullyDilutedShares.toString() === "0" || !boardGroupings ? (
             <p style={{ color: theme.inkMuted }}>No equity instruments recorded yet.</p>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={cellStyle}>Stakeholder</th>
-                    <th style={cellStyle}>Fully diluted shares</th>
-                    <th style={cellStyle}>Ownership %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {boardOwnership.map((o) => (
-                    <tr key={o.stakeholderId}>
-                      <td style={cellStyle}>{o.stakeholderName}</td>
-                      <td style={{ ...cellStyle, fontFamily: theme.font.mono }}>{o.shares.toString()}</td>
-                      <td style={{ ...cellStyle, fontFamily: theme.font.mono }}>{o.ownershipPercent?.toFixed(2)}%</td>
-                    </tr>
-                  ))}
-                  <tr>
-                    <td style={{ ...cellStyle, fontWeight: "bold" }}>Total</td>
-                    <td style={{ ...cellStyle, fontWeight: "bold", fontFamily: theme.font.mono }}>
-                      {boardRollup.totalFullyDilutedShares.toString()}
-                    </td>
-                    <td style={{ ...cellStyle, fontWeight: "bold", fontFamily: theme.font.mono }}>100.00%</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <CapTableOwnershipTable
+              totalShares={boardRollup.totalFullyDilutedShares.toString()}
+              byClass={boardGroupings.byClass}
+              byInvestor={boardGroupings.byInvestor}
+            />
           )}
           {boardRollup.unsupported.length > 0 && (
             <p style={{ color: theme.inkMuted, fontSize: "0.8rem" }}>
@@ -334,8 +314,6 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
   );
 }
 
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
-const tableStyle: React.CSSProperties = { borderCollapse: "collapse", width: "100%", marginBottom: "0.5rem", minWidth: "28rem" };
 const cardStyle: React.CSSProperties = {
   border: `1px solid ${theme.border}`,
   borderRadius: 8,

@@ -5,6 +5,7 @@ import { money, JournalEntry as DomainJournalEntry } from "@/lib/accounting/type
 import { buildAccountRollForward, buildStockCompDisclosure, StockCompInstrumentInput } from "@/lib/accounting/reporting";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { theme } from "@/lib/theme";
+import { ListingTable, spanCell } from "@/app/components/ListingTable";
 
 /**
  * Financial-statement support report (v0.19.0) — the front-end counterpart to
@@ -116,28 +117,21 @@ export default async function FinancialStatementsPage({
       <h2>Account roll-forward</h2>
       {rollForward.length === 0 && <p>Nothing closed yet.</p>}
       {rollForward.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "2rem" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Account</th>
-              <th style={cellStyle}>Currency</th>
-              <th style={cellStyle}>Beginning balance</th>
-              <th style={cellStyle}>Period activity</th>
-              <th style={cellStyle}>Ending balance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rollForward.map((r, i) => (
-              <tr key={i}>
-                <td style={cellStyle}>{r.account}</td>
-                <td style={cellStyle}>{r.currency}</td>
-                <td style={cellStyle}>{r.beginningBalance.toFixed(2)}</td>
-                <td style={cellStyle}>{r.periodActivity.toFixed(2)}</td>
-                <td style={cellStyle}>{r.endingBalance.toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div style={{ marginBottom: "2rem" }}>
+          <ListingTable
+            columns={[
+              { label: "Account" },
+              { label: "Currency" },
+              { label: "Beginning balance", align: "right" },
+              { label: "Period activity", align: "right" },
+              { label: "Ending balance", align: "right" },
+            ]}
+            rows={rollForward.map((r, i) => ({
+              key: i,
+              cells: [r.account, r.currency, r.beginningBalance.toFixed(2), r.periodActivity.toFixed(2), r.endingBalance.toFixed(2)],
+            }))}
+          />
+        </div>
       )}
 
       <h2>ASC 718 unrecognized compensation cost</h2>
@@ -153,42 +147,39 @@ export default async function FinancialStatementsPage({
       {disclosure.rows.length === 0 ? (
         <p>No equity-compensation instruments with usable data.</p>
       ) : (
-        <>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Stakeholder</th>
-                <th style={cellStyle}>Type</th>
-                <th style={cellStyle}>Total grant-date FV</th>
-                <th style={cellStyle}>Cumulative recognized</th>
-                <th style={cellStyle}>Unrecognized cost</th>
-                <th style={cellStyle}>Remaining years</th>
-              </tr>
-            </thead>
-            <tbody>
-              {disclosure.rows.map((r) => (
-                <tr key={r.instrumentId}>
-                  <td style={cellStyle}>{r.stakeholderName}</td>
-                  <td style={cellStyle}>{r.type}</td>
-                  <td style={cellStyle}>{r.totalGrantDateFairValue.toFixed(2)}</td>
-                  <td style={cellStyle}>{r.cumulativeExpenseRecognized.toFixed(2)}</td>
-                  <td style={cellStyle}>{r.unrecognizedCompCost.toFixed(2)}</td>
-                  <td style={cellStyle}>{r.remainingRecognitionYears.toFixed(2)}</td>
-                </tr>
-              ))}
-              <tr>
-                <td style={{ ...cellStyle, fontWeight: "bold" }} colSpan={4}>
-                  Total unrecognized cost / weighted-average remaining period
-                </td>
-                <td style={{ ...cellStyle, fontWeight: "bold" }}>{disclosure.totalUnrecognizedCompCost.toFixed(2)}</td>
-                <td style={{ ...cellStyle, fontWeight: "bold" }}>{disclosure.weightedAverageRemainingYears.toFixed(2)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </>
+        <ListingTable
+          columns={[
+            { label: "Stakeholder" },
+            { label: "Type" },
+            { label: "Total grant-date FV", align: "right" },
+            { label: "Cumulative recognized", align: "right" },
+            { label: "Unrecognized cost", align: "right" },
+            { label: "Remaining years", align: "right" },
+          ]}
+          rows={[
+            ...disclosure.rows.map((r) => ({
+              key: r.instrumentId,
+              cells: [
+                r.stakeholderName,
+                r.type,
+                r.totalGrantDateFairValue.toFixed(2),
+                r.cumulativeExpenseRecognized.toFixed(2),
+                r.unrecognizedCompCost.toFixed(2),
+                r.remainingRecognitionYears.toFixed(2),
+              ],
+            })),
+            {
+              key: "total",
+              highlight: true,
+              cells: [
+                spanCell("Total unrecognized cost / weighted-average remaining period", 4),
+                disclosure.totalUnrecognizedCompCost.toFixed(2),
+                disclosure.weightedAverageRemainingYears.toFixed(2),
+              ],
+            },
+          ]}
+        />
       )}
     </main>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };

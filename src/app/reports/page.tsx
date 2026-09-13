@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { summarizeByAccount, checkReconciliation } from "@/lib/accounting/reporting";
 import { money, JournalEntry as DomainJournalEntry } from "@/lib/accounting/types";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
+import { ListingTable } from "@/app/components/ListingTable";
 
 /**
  * Journal entries report — the front-end counterpart to GET /api/reports/journal-
@@ -86,68 +87,48 @@ export default async function ReportsPage({ searchParams }: { searchParams: { en
       ))}
 
       <h2>Account summary</h2>
-      <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "2rem" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Account</th>
-            <th style={cellStyle}>Currency</th>
-            <th style={cellStyle}>Total debit</th>
-            <th style={cellStyle}>Total credit</th>
-            <th style={cellStyle}>Net</th>
-          </tr>
-        </thead>
-        <tbody>
-          {accountSummary.map((s, i) => (
-            <tr key={i}>
-              <td style={cellStyle}>{s.account}</td>
-              <td style={cellStyle}>{s.currency}</td>
-              <td style={cellStyle}>{s.totalDebit.toFixed(2)}</td>
-              <td style={cellStyle}>{s.totalCredit.toFixed(2)}</td>
-              <td style={cellStyle}>{s.net.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ marginBottom: "2rem" }}>
+        <ListingTable
+          columns={[
+            { label: "Account" },
+            { label: "Currency" },
+            { label: "Total debit", align: "right" },
+            { label: "Total credit", align: "right" },
+            { label: "Net", align: "right" },
+          ]}
+          rows={accountSummary.map((s, i) => ({
+            key: i,
+            cells: [s.account, s.currency, s.totalDebit.toFixed(2), s.totalCredit.toFixed(2), s.net.toFixed(2)],
+          }))}
+        />
+      </div>
 
       <h2>Journal entries</h2>
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Date</th>
-            <th style={cellStyle}>Description</th>
-            <th style={cellStyle}>Instrument</th>
-            <th style={cellStyle}>ASC ref</th>
-            <th style={cellStyle}>Lines</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td style={cellStyle}>{r.date.toISOString().slice(0, 10)}</td>
-              <td style={cellStyle}>{r.description}</td>
-              <td style={cellStyle}>
-                {r.instrument ? (
-                  <Link href={`/instruments/${r.instrument.id}`}>
-                    {r.instrument.stakeholder.name} ({r.instrument.type})
-                  </Link>
-                ) : (
-                  "—"
-                )}
-              </td>
-              <td style={cellStyle}>{r.ascReference ?? "—"}</td>
-              <td style={cellStyle}>
-                {r.lines.map((l) => (
-                  <div key={l.id}>
-                    {l.account}: {l.debit ? `Dr ${l.debit.toString()}` : `Cr ${l.credit?.toString()}`}
-                  </div>
-                ))}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ListingTable
+        columns={[{ label: "Date" }, { label: "Description" }, { label: "Instrument" }, { label: "ASC ref" }, { label: "Lines" }]}
+        rows={rows.map((r) => ({
+          key: r.id,
+          cells: [
+            r.date.toISOString().slice(0, 10),
+            r.description,
+            r.instrument ? (
+              <Link href={`/instruments/${r.instrument.id}`}>
+                {r.instrument.stakeholder.name} ({r.instrument.type})
+              </Link>
+            ) : (
+              "—"
+            ),
+            r.ascReference ?? "—",
+            <>
+              {r.lines.map((l) => (
+                <div key={l.id}>
+                  {l.account}: {l.debit ? `Dr ${l.debit.toString()}` : `Cr ${l.credit?.toString()}`}
+                </div>
+              ))}
+            </>,
+          ],
+        }))}
+      />
     </main>
   );
 }
-
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.5rem", textAlign: "left" };
