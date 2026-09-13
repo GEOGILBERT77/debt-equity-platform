@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { ApproveAllAmortizationSchedulesButton } from "@/app/components/ApproveAllAmortizationSchedulesButton";
+import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -155,24 +156,12 @@ export default async function StockOptionAmortizationReportPage({
       <h2>Company-wide monthly total (approved schedules only)</h2>
       {monthlyRows.length === 0 && <p>No approved stock option amortization schedules yet.</p>}
       {monthlyRows.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "1.5rem" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Month</th>
-              <th style={cellStyle}>Aggregate expense</th>
-              <th style={cellStyle}>Cumulative</th>
-            </tr>
-          </thead>
-          <tbody>
-            {monthlyRows.map((r) => (
-              <tr key={r.month}>
-                <td style={cellStyle}>{r.month}</td>
-                <td style={cellStyle}>{r.amount.toFixed(2)}</td>
-                <td style={cellStyle}>{r.cumulative.toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <ScheduleGridTable
+            columns={[{ label: "Month" }, { label: "Aggregate expense", align: "right" }, { label: "Cumulative", align: "right" }]}
+            rows={monthlyRows.map((r) => ({ key: r.month, cells: [r.month, r.amount.toFixed(2), r.cumulative.toFixed(2)] }))}
+          />
+        </div>
       )}
 
       <h2>By instrument</h2>

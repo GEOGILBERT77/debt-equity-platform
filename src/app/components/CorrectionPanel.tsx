@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ScheduleGridTable } from "./ScheduleGridTable";
 import { theme } from "@/lib/theme";
 
 type PreviewResult = {
@@ -149,26 +150,13 @@ export function CorrectionPanel({ instrumentId }: { instrumentId: string }) {
       {preview && (
         <div style={{ marginTop: "1rem" }}>
           <h4>Preview — nothing written yet</h4>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Period</th>
-                <th style={cellStyle}>Original</th>
-                <th style={cellStyle}>Corrected</th>
-                <th style={cellStyle}>Delta</th>
-              </tr>
-            </thead>
-            <tbody>
-              {preview.perPeriodDeltas.map((d) => (
-                <tr key={d.periodEnd}>
-                  <td style={cellStyle}>{d.label}</td>
-                  <td style={cellStyle}>{d.originalAmount}</td>
-                  <td style={cellStyle}>{d.correctedAmount}</td>
-                  <td style={cellStyle}>{d.delta}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ScheduleGridTable
+            columns={[{ label: "Period" }, { label: "Original", align: "right" }, { label: "Corrected", align: "right" }, { label: "Delta", align: "right" }]}
+            rows={preview.perPeriodDeltas.map((d) => ({
+              key: d.periodEnd,
+              cells: [d.label, d.originalAmount, d.correctedAmount, d.delta],
+            }))}
+          />
           <p>
             <strong>Cumulative delta: {preview.cumulativeDelta}</strong>
           </p>
@@ -227,4 +215,3 @@ const linkButtonStyle: React.CSSProperties = {
 };
 const labelStyle: React.CSSProperties = { display: "block", margin: "0.75rem 0", fontSize: "0.9rem" };
 const inputStyle: React.CSSProperties = { display: "block", width: "100%", padding: "0.4rem", marginTop: "0.25rem" };
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left" };

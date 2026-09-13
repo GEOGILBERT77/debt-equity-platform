@@ -6,6 +6,7 @@ import { CloseInstrumentButton } from "@/app/components/CloseInstrumentButton";
 import { CorrectionPanel } from "@/app/components/CorrectionPanel";
 import { ApproveAmortizationScheduleButton } from "@/app/components/ApproveAmortizationScheduleButton";
 import { PerformanceConditionAssessmentPanel } from "@/app/components/PerformanceConditionAssessmentPanel";
+import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
 import { requirePageEntityAccess } from "@/lib/auth/pageGuard";
 import { attachPerformanceConditionAssessments } from "@/lib/db/performanceConditions";
 
@@ -150,26 +151,19 @@ export default async function InstrumentPage({ params }: { params: { id: string 
         </p>
       )}
       {!scheduleError && (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Period</th>
-              <th style={cellStyle}>Amount</th>
-              <th style={cellStyle}>Ending balance</th>
-              <th style={cellStyle}>Term version</th>
-            </tr>
-          </thead>
-          <tbody>
-            {schedule.map((row, i) => (
-              <tr key={i}>
-                <td style={cellStyle}>{row.label}</td>
-                <td style={cellStyle}>{row.amount.toFixed(2)}</td>
-                <td style={cellStyle}>{row.endingBalance?.toFixed(2) ?? "—"}</td>
-                <td style={cellStyle}>{String(row.meta?.termVersionLabel ?? "—")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ScheduleGridTable
+          columns={[
+            { label: "Period" },
+            { label: "Amount", align: "right" },
+            { label: "Ending balance", align: "right" },
+            { label: "Term version" },
+          ]}
+          rows={schedule.map((row, i) => ({
+            key: i,
+            cells: [row.label, row.amount.toFixed(2), row.endingBalance?.toFixed(2) ?? "—", String(row.meta?.termVersionLabel ?? "—")],
+          }))}
+          emptyMessage="No periods computed yet."
+        />
       )}
 
       {(fullMonthlySchedule || fullScheduleError) && (
@@ -215,26 +209,15 @@ export default async function InstrumentPage({ params }: { params: { id: string 
                 />
               )}
               <ApproveAmortizationScheduleButton instrumentId={instrument.id} />
-              <div style={{ maxHeight: 400, overflowY: "auto", border: `1px solid ${theme.border}` }}>
-                <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                  <thead>
-                    <tr>
-                      <th style={cellStyle}>Month</th>
-                      <th style={cellStyle}>Amount</th>
-                      <th style={cellStyle}>Ending balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fullMonthlySchedule.map((row, i) => (
-                      <tr key={i}>
-                        <td style={cellStyle}>{row.label}</td>
-                        <td style={cellStyle}>{row.amount.toFixed(2)}</td>
-                        <td style={cellStyle}>{row.endingBalance?.toFixed(2) ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ScheduleGridTable
+                columns={[{ label: "Month" }, { label: "Amount", align: "right" }, { label: "Ending balance", align: "right" }]}
+                rows={fullMonthlySchedule.map((row, i) => ({
+                  key: i,
+                  cells: [row.label, row.amount.toFixed(2), row.endingBalance?.toFixed(2) ?? "—"],
+                  highlight: i === fullMonthlySchedule!.length - 1,
+                }))}
+                maxHeight={400}
+              />
             </>
           )}
         </>
@@ -243,28 +226,19 @@ export default async function InstrumentPage({ params }: { params: { id: string 
       <h2>Closed &amp; reported (persisted ScheduleEntry rows)</h2>
       {closedRows.length === 0 && <p>Nothing closed yet — use the button above.</p>}
       {closedRows.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Period</th>
-              <th style={cellStyle}>Amount</th>
-              <th style={cellStyle}>Ending balance</th>
-              <th style={cellStyle}>Currency</th>
-              <th style={cellStyle}>ASC ref</th>
-            </tr>
-          </thead>
-          <tbody>
-            {closedRows.map((r) => (
-              <tr key={r.id}>
-                <td style={cellStyle}>{r.label}</td>
-                <td style={cellStyle}>{r.amount.toString()}</td>
-                <td style={cellStyle}>{r.endingBalance?.toString() ?? "—"}</td>
-                <td style={cellStyle}>{r.currency}</td>
-                <td style={cellStyle}>{r.ascReference ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ScheduleGridTable
+          columns={[
+            { label: "Period" },
+            { label: "Amount", align: "right" },
+            { label: "Ending balance", align: "right" },
+            { label: "Currency" },
+            { label: "ASC ref" },
+          ]}
+          rows={closedRows.map((r) => ({
+            key: r.id,
+            cells: [r.label, r.amount.toString(), r.endingBalance?.toString() ?? "—", r.currency, r.ascReference ?? "—"],
+          }))}
+        />
       )}
 
       <h2>Journal entries booked</h2>

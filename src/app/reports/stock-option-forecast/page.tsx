@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { HypotheticalGrantForecast } from "@/app/components/HypotheticalGrantForecast";
+import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -113,25 +114,15 @@ export default async function StockOptionForecastPage({ searchParams }: { search
       <h2>Monthly forecast (approved grants only)</h2>
       {monthlyRows.length === 0 && <p>No approved stock option amortization schedules yet.</p>}
       {monthlyRows.length > 0 && (
-        <div style={{ maxHeight: 300, overflowY: "auto", border: `1px solid ${theme.border}`, marginBottom: "1.5rem" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Month</th>
-                <th style={cellStyle}>Expense</th>
-                <th style={cellStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyRows.map((r) => (
-                <tr key={r.month}>
-                  <td style={cellStyle}>{r.month}</td>
-                  <td style={cellStyle}>{r.amount.toFixed(2)}</td>
-                  <td style={{ ...cellStyle, color: theme.inkMuted, fontSize: "0.8rem" }}>{r.isFuture ? "Forecasted" : "Recognized"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <ScheduleGridTable
+            maxHeight={300}
+            columns={[{ label: "Month" }, { label: "Expense", align: "right" }, { label: "Status" }]}
+            rows={monthlyRows.map((r) => ({
+              key: r.month,
+              cells: [r.month, r.amount.toFixed(2), <span style={{ color: theme.inkMuted, fontSize: "0.8rem" }}>{r.isFuture ? "Forecasted" : "Recognized"}</span>],
+            }))}
+          />
         </div>
       )}
 

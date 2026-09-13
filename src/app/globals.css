@@ -52,3 +52,16 @@ textarea::placeholder {
 input, select, textarea, button {
   font-family: inherit;
 }
+
+/* v0.42.0 — ScheduleGridTable.tsx's zebra striping and row hover: :nth-child/:hover
+   are another case an inline `style={{}}` prop can't express, same reasoning as the
+   :focus-visible rule above. Scoped to the .de-sched-grid class rather than every
+   <table>, so it only ever applies to the "dense schedule grid" tables that opted into
+   it (amortization schedules and anything else with monthly/periodic row indices —
+   see that component's own doc comment for the full list of call sites). */
+.de-sched-grid tbody tr:nth-child(even) {
+  background: var(--de-surface-alt);
+}
+.de-sched-grid tbody tr:hover {
+  background: #DCE4EC;
+}

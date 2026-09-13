@@ -12,6 +12,7 @@ import {
   toStockOptionGrantTerms,
 } from "./termsFields/TypeForms";
 import { labelStyle, inputStyle as fieldInputStyle } from "./termsFields/FieldPrimitives";
+import { ScheduleGridTable } from "./ScheduleGridTable";
 import { theme } from "@/lib/theme";
 
 type GrantType = "STOCK_OPTION" | "RSU" | "RESTRICTED_STOCK";
@@ -259,31 +260,22 @@ export function ModifyGrantForm({
                   </div>
                 </div>
               </div>
-              <div style={{ maxHeight: 300, overflowY: "auto", border: `1px solid ${theme.border}` }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9rem" }}>
-                  <thead>
-                    <tr>
-                      <th style={cellStyle}>Period</th>
-                      <th style={cellStyle}>Current</th>
-                      <th style={cellStyle}>Proposed</th>
-                      <th style={cellStyle}>Change</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.perPeriodDeltas.map((d) => (
-                      <tr key={d.periodEnd}>
-                        <td style={cellStyle}>{d.label}</td>
-                        <td style={cellStyle}>{d.beforeAmount}</td>
-                        <td style={cellStyle}>{d.afterAmount}</td>
-                        <td style={{ ...cellStyle, color: Number(d.delta) === 0 ? "inherit" : Number(d.delta) > 0 ? theme.success.fg : theme.warning.fg }}>
-                          {Number(d.delta) > 0 ? "+" : ""}
-                          {d.delta}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ScheduleGridTable
+                maxHeight={300}
+                columns={[{ label: "Period" }, { label: "Current", align: "right" }, { label: "Proposed", align: "right" }, { label: "Change", align: "right" }]}
+                rows={preview.perPeriodDeltas.map((d) => ({
+                  key: d.periodEnd,
+                  cells: [
+                    d.label,
+                    d.beforeAmount,
+                    d.afterAmount,
+                    <span style={{ color: Number(d.delta) === 0 ? "inherit" : Number(d.delta) > 0 ? theme.success.fg : theme.warning.fg }}>
+                      {Number(d.delta) > 0 ? "+" : ""}
+                      {d.delta}
+                    </span>,
+                  ],
+                }))}
+              />
             </>
           )}
           <div style={{ marginTop: "1rem" }}>
@@ -309,4 +301,3 @@ const buttonStyle: React.CSSProperties = {
   background: theme.surfaceAlt,
   cursor: "pointer",
 };
-const cellStyle: React.CSSProperties = { border: `1px solid ${theme.border}`, padding: "0.4rem", textAlign: "left" };

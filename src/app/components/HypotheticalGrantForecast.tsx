@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { generateStandardMonthlyTranches, buildServiceConditionSchedule } from "@/lib/accounting/vesting";
 import { buildCalendarMonthlyPeriods } from "@/lib/accounting/dateMath";
+import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
 import { theme } from "@/lib/theme";
 
 /**
@@ -103,28 +104,19 @@ export function HypotheticalGrantForecast({ realMonthly }: { realMonthly: { mont
       </div>
       {error && <p style={{ color: theme.danger.fg }}>{error}</p>}
       {combined.length > 0 && (
-        <div style={{ maxHeight: 400, overflowY: "auto", border: `1px solid ${theme.border}` }}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Month</th>
-                <th style={cellStyle}>Approved (real)</th>
-                <th style={cellStyle}>+ Hypothetical</th>
-                <th style={cellStyle}>Combined total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {combined.map((r) => (
-                <tr key={r.month}>
-                  <td style={cellStyle}>{r.month}</td>
-                  <td style={cellStyle}>{r.real.toFixed(2)}</td>
-                  <td style={cellStyle}>{r.hypothetical.toFixed(2)}</td>
-                  <td style={{ ...cellStyle, fontWeight: 600 }}>{r.total.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ScheduleGridTable
+          maxHeight={400}
+          columns={[
+            { label: "Month" },
+            { label: "Approved (real)", align: "right" },
+            { label: "+ Hypothetical", align: "right" },
+            { label: "Combined total", align: "right" },
+          ]}
+          rows={combined.map((r) => ({
+            key: r.month,
+            cells: [r.month, r.real.toFixed(2), r.hypothetical.toFixed(2), <strong>{r.total.toFixed(2)}</strong>],
+          }))}
+        />
       )}
     </div>
   );
