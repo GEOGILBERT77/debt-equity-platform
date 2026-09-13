@@ -11,18 +11,26 @@ import { parsePagination, paginationMeta } from "@/lib/api/pagination";
  * `db` (applying the same access check itself — see src/app/instruments/new/page.tsx),
  * this route exists for symmetry with POST and for any future client-side use.
  *
- * POST /api/entities/:id/stakeholders { "name", "type", "email"?, "phone"?, "address"? }
- * Requires at least EDITOR on the entity. `type` must be one of the StakeholderType
- * enum values (INVESTOR, DEBT_HOLDER, EMPLOYEE, ADVISOR, ENTITY_HOLDER) — see
- * prisma/schema.prisma. Validated against that list below before ever reaching
- * Postgres (see termsValidation.ts's doc comment for why this is a hand-rolled check
- * rather than a real schema library — same npm-registry constraint, same reasoning),
- * so an invalid `type` now gets a clean 400 naming the valid values instead of a raw
- * Postgres enum-constraint error.
+ * POST /api/entities/:id/stakeholders { "name", "type", "email"?, "phone"?, "address"?,
+ * "investorType"?, "contactName"? } — Requires at least EDITOR on the entity. `type`
+ * must be one of the StakeholderType enum values (INVESTOR, DEBT_HOLDER, EMPLOYEE,
+ * ADVISOR, ENTITY_HOLDER) — see prisma/schema.prisma. Validated against that list below
+ * before ever reaching Postgres (see termsValidation.ts's doc comment for why this is a
+ * hand-rolled check rather than a real schema library — same npm-registry constraint,
+ * same reasoning), so an invalid `type` now gets a clean 400 naming the valid values
+ * instead of a raw Postgres enum-constraint error. `investorType` (v0.44.0), when
+ * given, must be one of the InvestorType enum values (INDIVIDUAL, INSTITUTION) — see
+ * that enum's doc comment for why it's separate from `type`; `contactName` is a plain
+ * optional string, the investor's point-of-contact person (see
+ * Stakeholder.contactName's doc comment). Neither is required by this route even for an
+ * INVESTOR/ENTITY_HOLDER `type` — the "Investor Contacts" page falls back to `name`
+ * when `contactName` is unset, so an existing integration or a quick manual add
+ * doesn't start failing just because this feature was added.
  *
  * NOT EXECUTED IN THIS SANDBOX — same caveat as every other file under src/app/.
  */
 const VALID_STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR", "ENTITY_HOLDER"] as const;
+const VALID_INVESTOR_TYPES = ["INDIVIDUAL", "INSTITUTION"] as const;
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const access = await requireApiEntityAccess(req, params.id, "VIEWER");
@@ -50,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (access instanceof NextResponse) return access;
 
   const body = await req.json().catch(() => ({}));
-  const { name, type, email, phone, address } = body ?? {};
+  const { name, type, email, phone, address, investorType, contactName } = body ?? {};
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -60,6 +68,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       { error: `type is required and must be one of: ${VALID_STAKEHOLDER_TYPES.join(", ")}` },
       { status: 400 }
     );
+  }
+  if (investorType !== undefined && investorType !== null && investorType !== "" && !VALID_INVESTOR_TYPES.includes(investorType)) {
+    return NextResponse.json({ error: `investorType must be one of: ${VALID_INVESTOR_TYPES.join(", ")}` }, { status: 400 });
   }
 
   // requireApiEntityAccess above already confirms this entity exists (an
@@ -79,6 +90,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       email: email || undefined,
       phone: phone || undefined,
       address: address || undefined,
+      investorType: investorType || undefined,
+      contactName: contactName || undefined,
     },
   });
 

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { theme } from "@/lib/theme";
 
 const STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR", "ENTITY_HOLDER"] as const;
+const INVESTOR_TYPES = ["INDIVIDUAL", "INSTITUTION"] as const;
 
 /**
  * Inline edit/delete controls for one row of the cap table page's stakeholder table —
@@ -13,6 +14,12 @@ const STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR", "EN
  * with a clean message surfaced here) whenever this stakeholder still holds any
  * instruments — see that route's doc comment for why reassigning an instrument to a
  * different stakeholder isn't supported instead.
+ *
+ * v0.44.0 — added Phone/Mailing address (previously not editable anywhere in the UI
+ * despite the API already accepting them) plus Investor type/Point of contact for the
+ * "Investor Contacts" page (src/app/investors/contacts/page.tsx) — same conditional
+ * "only for INVESTOR/ENTITY_HOLDER" visibility as NewStakeholderForm.tsx; see that
+ * component's doc comment for the full reasoning.
  */
 export function StakeholderRowActions({
   entityId,
@@ -20,6 +27,10 @@ export function StakeholderRowActions({
   initialName,
   initialType,
   initialEmail,
+  initialPhone,
+  initialAddress,
+  initialInvestorType,
+  initialContactName,
   hasInstruments,
 }: {
   entityId: string;
@@ -27,6 +38,10 @@ export function StakeholderRowActions({
   initialName: string;
   initialType: (typeof STAKEHOLDER_TYPES)[number];
   initialEmail: string;
+  initialPhone: string;
+  initialAddress: string;
+  initialInvestorType: (typeof INVESTOR_TYPES)[number] | "";
+  initialContactName: string;
   hasInstruments: boolean;
 }) {
   const router = useRouter();
@@ -34,8 +49,14 @@ export function StakeholderRowActions({
   const [name, setName] = useState(initialName);
   const [type, setType] = useState(initialType);
   const [email, setEmail] = useState(initialEmail);
+  const [phone, setPhone] = useState(initialPhone);
+  const [address, setAddress] = useState(initialAddress);
+  const [investorType, setInvestorType] = useState(initialInvestorType);
+  const [contactName, setContactName] = useState(initialContactName);
   const [status, setStatus] = useState<"idle" | "saving" | "deleting" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
+
+  const showInvestorFields = type === "INVESTOR" || type === "ENTITY_HOLDER";
 
   async function handleSave() {
     setStatus("saving");
@@ -44,7 +65,15 @@ export function StakeholderRowActions({
       const res = await fetch(`/api/entities/${entityId}/stakeholders/${stakeholderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type, email: email || null }),
+        body: JSON.stringify({
+          name,
+          type,
+          email: email || null,
+          phone: phone || null,
+          address: address || null,
+          investorType: showInvestorFields ? investorType || null : null,
+          contactName: showInvestorFields ? contactName || null : null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -106,7 +135,7 @@ export function StakeholderRowActions({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxWidth: 220 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxWidth: 240 }}>
       <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={smallInputStyle} />
       <select value={type} onChange={(e) => setType(e.target.value as typeof type)} style={smallInputStyle}>
         {STAKEHOLDER_TYPES.map((t) => (
@@ -116,6 +145,34 @@ export function StakeholderRowActions({
         ))}
       </select>
       <input type="email" placeholder="email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} style={smallInputStyle} />
+      <input type="tel" placeholder="phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} style={smallInputStyle} />
+      <textarea
+        placeholder="mailing address (optional)"
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+        rows={2}
+        style={{ ...smallInputStyle, resize: "vertical" }}
+      />
+      {showInvestorFields && (
+        <>
+          <select
+            value={investorType}
+            onChange={(e) => setInvestorType(e.target.value as typeof investorType)}
+            style={smallInputStyle}
+          >
+            <option value="">Investor type: not set</option>
+            <option value="INDIVIDUAL">Investor type: individual</option>
+            <option value="INSTITUTION">Investor type: institution</option>
+          </select>
+          <input
+            type="text"
+            placeholder="point of contact (optional)"
+            value={contactName}
+            onChange={(e) => setContactName(e.target.value)}
+            style={smallInputStyle}
+          />
+        </>
+      )}
       <div style={{ display: "flex", gap: "0.4rem" }}>
         <button type="button" onClick={handleSave} disabled={status === "saving"} style={smallButtonStyle}>
           {status === "saving" ? "Saving…" : "Save"}
@@ -127,6 +184,10 @@ export function StakeholderRowActions({
             setName(initialName);
             setType(initialType);
             setEmail(initialEmail);
+            setPhone(initialPhone);
+            setAddress(initialAddress);
+            setInvestorType(initialInvestorType);
+            setContactName(initialContactName);
             setMessage(null);
           }}
           style={smallButtonStyle}

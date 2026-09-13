@@ -81,6 +81,13 @@ import { theme } from "@/lib/theme";
  * bulk upload — since those three were, in practice, one decision tree split across
  * three redundant-feeling screens.
  *
+ * "INVESTORS" MENU (v0.44.0): "Interactive cap table" renamed to "Investors" — the menu
+ * already held both cap-table views (Cap table, Waterfall Analysis), and adding a third,
+ * non-cap-table item (Investor Contacts — src/app/investors/contacts/page.tsx) made
+ * "Interactive cap table" the wrong name for the menu as a whole; "Investors" describes
+ * everything in it. Internal `openMenu` state key renamed from "captable" to
+ * "investors" to match — purely a variable rename, no behavior change.
+ *
  * NOTES / EQUITY FUNDING CONSOLIDATION (v0.41.0): George's ask, verbatim — "for debt,
  * there should be 3 categories: Term Loan, Notes (includes PIK and Convertible),
  * Revolver/LOC... common stock and preferred stock should be combined into 'New Equity
@@ -183,7 +190,7 @@ export function NavBar({
   // Falls back to the user's default entity ONLY when the URL has no entityId at all —
   // see the DEFAULT ENTITY note above. An entityId already in the URL always wins.
   const entityId = searchParams.get("entityId") ?? defaultEntityId ?? null;
-  const [openMenu, setOpenMenu] = useState<"transactions" | "captable" | "reports" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"transactions" | "investors" | "reports" | null>(null);
   const navRef = useRef<HTMLElement>(null);
 
   // Closes an open dropdown on an outside click — without this, clicking anywhere
@@ -316,12 +323,12 @@ export function NavBar({
       <div style={{ position: "relative" }}>
         <button
           type="button"
-          onClick={() => setOpenMenu(openMenu === "captable" ? null : "captable")}
-          style={navButtonStyle(openMenu === "captable")}
+          onClick={() => setOpenMenu(openMenu === "investors" ? null : "investors")}
+          style={navButtonStyle(openMenu === "investors")}
         >
-          Interactive cap table ▾
+          Investors ▾
         </button>
-        {openMenu === "captable" && (
+        {openMenu === "investors" && (
           <div style={dropdownStyle}>
             <Link href={withEntityId("/captable", entityId)} style={dropdownItemStyle} onClick={() => setOpenMenu(null)}>
               Cap table
@@ -332,6 +339,13 @@ export function NavBar({
               onClick={() => setOpenMenu(null)}
             >
               Waterfall Analysis
+            </Link>
+            <Link
+              href={withEntityId("/investors/contacts", entityId)}
+              style={dropdownItemStyle}
+              onClick={() => setOpenMenu(null)}
+            >
+              Investor Contacts
             </Link>
           </div>
         )}

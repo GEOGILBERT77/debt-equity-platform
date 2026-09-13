@@ -3,13 +3,17 @@ import { db } from "@/lib/db";
 import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
 
 const VALID_STAKEHOLDER_TYPES = ["INVESTOR", "DEBT_HOLDER", "EMPLOYEE", "ADVISOR", "ENTITY_HOLDER"] as const;
+const VALID_INVESTOR_TYPES = ["INDIVIDUAL", "INSTITUTION"] as const;
 
 /**
  * PATCH /api/entities/:id/stakeholders/:stakeholderId { "name"?, "type"?, "email"?,
- * "phone"?, "address"?, "taxIdNumber"? } — edits a stakeholder's own record (who they
- * are), never their instruments' terms. Requires at least EDITOR on the parent entity,
- * same bar the sibling `POST .../stakeholders` route in `../route.ts` uses for
- * creating one.
+ * "phone"?, "address"?, "taxIdNumber"?, "investorType"?, "contactName"? } — edits a
+ * stakeholder's own record (who they are), never their instruments' terms. Requires at
+ * least EDITOR on the parent entity, same bar the sibling `POST .../stakeholders` route
+ * in `../route.ts` uses for creating one. `investorType`/`contactName` (v0.44.0) — see
+ * that route's doc comment and prisma/schema.prisma's doc comments on the InvestorType
+ * enum and Stakeholder.investorType/contactName; either can be cleared back to null by
+ * passing an empty string, same convention email/phone/address already use below.
  *
  * `taxIdNumber` (v0.33.0) is a government SSN/EIN — see prisma/schema.prisma's
  * SECURITY doc comment on Stakeholder.taxIdNumber before this is ever populated with
@@ -44,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const body = await req.json().catch(() => ({}));
-  const { name, type, email, phone, address, taxIdNumber } = body ?? {};
+  const { name, type, email, phone, address, taxIdNumber, investorType, contactName } = body ?? {};
 
   const data: {
     name?: string;
@@ -53,6 +57,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     phone?: string | null;
     address?: string | null;
     taxIdNumber?: string | null;
+    investorType?: (typeof VALID_INVESTOR_TYPES)[number] | null;
+    contactName?: string | null;
   } = {};
   if (name !== undefined) {
     if (typeof name !== "string" || name.trim().length === 0) {
@@ -70,9 +76,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (phone !== undefined) data.phone = phone || null;
   if (address !== undefined) data.address = address || null;
   if (taxIdNumber !== undefined) data.taxIdNumber = taxIdNumber ? String(taxIdNumber).trim() : null;
+  if (investorType !== undefined) {
+    if (investorType && !VALID_INVESTOR_TYPES.includes(investorType)) {
+      return NextResponse.json({ error: `investorType must be one of: ${VALID_INVESTOR_TYPES.join(", ")}` }, { status: 400 });
+    }
+    data.investorType = investorType || null;
+  }
+  if (contactName !== undefined) data.contactName = contactName || null;
 
   if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "Provide at least one of: name, type, email, phone, address, taxIdNumber" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Provide at least one of: name, type, email, phone, address, taxIdNumber, investorType, contactName" },
+      { status: 400 }
+    );
   }
 
   const stakeholder = await db.stakeholder.update({ where: { id: params.stakeholderId }, data });

@@ -239,6 +239,10 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
               initialName={s.name}
               initialType={s.type}
               initialEmail={s.email ?? ""}
+              initialPhone={s.phone ?? ""}
+              initialAddress={s.address ?? ""}
+              initialInvestorType={s.investorType ?? ""}
+              initialContactName={s.contactName ?? ""}
               hasInstruments={s.instruments.length > 0}
             />,
           ],

@@ -216,6 +216,20 @@ enum StakeholderType {
   ENTITY_HOLDER // another company acting as an investor or lender
 }
 
+/// v0.44.0 — "Investor Contacts" page (George, verbatim: wants investor type
+/// [individual, institution] tracked alongside a contact/point person, mailing
+/// address, email, and phone). Deliberately its own enum rather than reusing/extending
+/// StakeholderType: StakeholderType answers "what kind of claim does this person/entity
+/// hold on the company" (an equity investor vs. a lender vs. an employee), while
+/// InvestorType answers an orthogonal question — "is the investor itself a natural
+/// person or an organization" — which matters because an INSTITUTION needs a named
+/// human point of contact (Stakeholder.contactName below) that's distinct from the
+/// institution's own name, while an INDIVIDUAL investor IS their own contact.
+enum InvestorType {
+  INDIVIDUAL
+  INSTITUTION
+}
+
 model Stakeholder {
   id          String          @id @default(cuid())
   entityId    String
@@ -225,6 +239,21 @@ model Stakeholder {
   email       String?
   phone       String?
   address     String?
+  /// v0.44.0 — NULLABLE, and only meaningful for an INVESTOR/ENTITY_HOLDER stakeholder
+  /// (see InvestorType's own doc comment above) — left unset for EMPLOYEE/ADVISOR/
+  /// DEBT_HOLDER rows and for anything recorded before this existed. Surfaced on the
+  /// "Investor Contacts" page (src/app/investors/contacts/page.tsx).
+  investorType InvestorType?
+  /// v0.44.0 — the point-of-contact PERSON's name for this investor, shown on the
+  /// "Investor Contacts" page. For an INSTITUTION this is genuinely a different value
+  /// from `name` above (e.g. `name` = "Acme Ventures LLC", `contactName` = "Jane Doe,
+  /// Managing Partner"); for an INDIVIDUAL investor it's expected to just repeat `name`
+  /// (they're their own point of contact) — the UI defaults it that way but doesn't
+  /// enforce it at the database level, since nothing here actually depends on the two
+  /// being equal. NULLABLE for the same reasons as investorType above; the Investor
+  /// Contacts page falls back to showing `name` itself when this is unset, so that
+  /// page never renders a blank "point of contact" for an existing record.
+  contactName String?
   /// v0.33.0 — SSN (individual) or EIN (an ADVISOR/ENTITY_HOLDER that's itself a
   /// business) for tax/compliance filings this platform generates on this
   /// stakeholder's behalf (Form 3921's recipient TIN box). NULLABLE for every

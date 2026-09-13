@@ -46,6 +46,9 @@ CREATE TYPE "EntityRole" AS ENUM ('OWNER', 'EDITOR', 'VIEWER');
 -- TaxFilingRecord for the full reasoning behind each value.
 CREATE TYPE "TaxFilingType" AS ENUM ('FORM_3921', 'W2_NSO_EXERCISE_INCOME', 'W2_ISO_DISQUALIFYING_DISPOSITION', 'ELECTION_83B_DEADLINE');
 CREATE TYPE "TaxFilingStatus" AS ENUM ('PENDING', 'FILED', 'NOT_REQUIRED');
+-- v0.44.0 — see prisma/schema.prisma's doc comment on this enum and on
+-- Stakeholder.investorType/contactName for the full reasoning ("Investor Contacts" page).
+CREATE TYPE "InvestorType" AS ENUM ('INDIVIDUAL', 'INSTITUTION');
 
 -- =============================================================================
 -- User / EntityAccess (multi-tenancy — see prisma/schema.prisma's design note #4)
@@ -122,6 +125,11 @@ CREATE TABLE "Stakeholder" (
   "email" TEXT,
   "phone" TEXT,
   "address" TEXT,
+  -- v0.44.0 — see prisma/schema.prisma's doc comments on these two columns
+  -- ("Investor Contacts" page). NULLABLE, and only meaningful for an
+  -- INVESTOR/ENTITY_HOLDER row.
+  "investorType" "InvestorType",
+  "contactName" TEXT,
   -- v0.33.0 — SSN (individual) or EIN (a business ADVISOR/ENTITY_HOLDER) for tax/
   -- compliance filings generated on this stakeholder's behalf (Form 3921's recipient
   -- TIN box). NULLABLE for every stakeholder recorded before this existed.
@@ -159,6 +167,35 @@ CREATE INDEX "Instrument_entityId_idx" ON "Instrument"("entityId");
 CREATE INDEX "Instrument_stakeholderId_idx" ON "Instrument"("stakeholderId");
 
 -- =============================================================================
+-- PerformanceCondition / PerformanceConditionAssessment (v0.38.0) — see
+-- prisma/schema.prisma's doc comment on PerformanceCondition for the full design.
+-- Created here, before InstrumentTermVersion, purely so InstrumentTermVersion's own
+-- nullable FK to "PerformanceCondition" below can reference an already-existing
+-- table — neither of these two depends on InstrumentTermVersion.
+-- =============================================================================
+CREATE TABLE "PerformanceCondition" (
+  "id" TEXT PRIMARY KEY,
+  "entityId" TEXT NOT NULL REFERENCES "Entity"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "code" TEXT NOT NULL,
+  "description" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE ("entityId", "code")
+);
+
+CREATE TABLE "PerformanceConditionAssessment" (
+  "id" TEXT PRIMARY KEY,
+  "performanceConditionId" TEXT NOT NULL REFERENCES "PerformanceCondition"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "effectiveDate" TIMESTAMP(3) NOT NULL,
+  "probable" BOOLEAN NOT NULL,
+  "note" TEXT,
+  -- Nullable for the same reason InstrumentTermVersion."createdByUserId" below is.
+  "createdByUserId" TEXT REFERENCES "User"("id"),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "PerformanceConditionAssessment_conditionId_effectiveDate_idx" ON "PerformanceConditionAssessment"("performanceConditionId", "effectiveDate");
+
+-- =============================================================================
 -- InstrumentTermVersion (append-only — see prisma/schema.prisma's design note #2;
 -- enforced by application code in modificationEngine.ts, not by a DB constraint, the
 -- same way Postgres can't enforce "never call UPDATE on this table" on its own)
@@ -175,7 +212,11 @@ CREATE TABLE "InstrumentTermVersion" (
   -- DELETE behavior beyond Postgres's default (NO ACTION) — see the matching note on
   -- Correction."createdByUserId" below.
   "createdByUserId" TEXT REFERENCES "User"("id"),
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- v0.38.0 — opts this term version into a shared PerformanceCondition instead of (or
+  -- alongside, though it's only ever READ when set) its own inline
+  -- "probabilityAssessments" inside "terms". See PerformanceCondition's doc comment.
+  "performanceConditionId" TEXT REFERENCES "PerformanceCondition"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 CREATE INDEX "InstrumentTermVersion_instrumentId_effectiveDate_idx" ON "InstrumentTermVersion"("instrumentId", "effectiveDate");
 
