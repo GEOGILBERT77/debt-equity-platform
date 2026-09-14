@@ -49,7 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       },
       stakeholder: { select: { id: true, name: true } },
       instrument: { select: { id: true, type: true } },
-      uploadedByUser: { select: { id: true, name: true } },
+      uploadedByUser: { select: { id: true, email: true } },
     },
     orderBy: { createdAt: "desc" },
   });

@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: { id: params.id },
     include: {
       documentVersion: { include: { document: { select: { id: true, title: true, category: true } } } },
-      requestedByUser: { select: { id: true, name: true } },
+      requestedByUser: { select: { id: true, email: true } },
     },
   });
   if (!analysis) {
