@@ -60,9 +60,9 @@ test("capTableWaterfall: pools two Series A holders into one class, and every ot
     },
   ];
 
-  const { classes, excluded } = buildWaterfallClassesFromCapTable(instruments);
+  const { classes, excluded, holdersByClassId, debt } = buildWaterfallClassesFromCapTable(instruments);
   assert.equal(excluded.length, 0);
-  assert.equal(classes.length, 2); // Series A pooled to one class + one Common pool — TERM_LOAN excluded silently
+  assert.equal(classes.length, 2); // Series A pooled to one class + one Common pool — TERM_LOAN excluded from the class stack (surfaced separately, in `debt`)
 
   const seriesA = classes.find((c) => c.id === "Series A")!;
   assert.ok(seriesA, "Series A class should exist");
@@ -72,6 +72,21 @@ test("capTableWaterfall: pools two Series A holders into one class, and every ot
   const common = classes.find((c) => c.id === "__common_pool__")!;
   assert.ok(common);
   assert.equal(common.shares.toString(), "8000000");
+
+  // v0.40.0 — holder-level breakdown for the report's expand/collapse UI, and debt
+  // surfaced (not part of the class stack, but no longer silently dropped either).
+  assert.equal(holdersByClassId["Series A"].length, 2);
+  assert.deepEqual(
+    holdersByClassId["Series A"].map((h) => h.stakeholderName).sort(),
+    ["Investor 1", "Investor 2"]
+  );
+  assert.equal(holdersByClassId["__common_pool__"].length, 1);
+  assert.equal(holdersByClassId["__common_pool__"][0].stakeholderName, "Founder");
+  assert.equal(debt.length, 1);
+  assert.equal(debt[0].instrumentId, "loan1");
+  assert.equal(debt[0].stakeholderName, "Bank");
+  assert.equal(debt[0].type, "TERM_LOAN");
+  assert.equal(debt[0].outstandingBalance!.toString(), "500000");
 
   // And the resulting classes actually run through buildExitWaterfall correctly —
   // low exit ($5M): Series A's as-converted per-share value (5,000,000/10,000,000 =

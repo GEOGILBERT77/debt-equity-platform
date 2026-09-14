@@ -60,13 +60,16 @@ export default async function StakeholderPage({ params }: { params: { id: string
 
   const instrumentIds = stakeholder.instruments.map((i) => i.id);
   const [documents, portalAccessCount] = await Promise.all([
-    instrumentIds.length === 0
-      ? Promise.resolve([])
-      : db.document.findMany({
-          where: { instrumentId: { in: instrumentIds } },
-          include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 }, instrument: true },
-          orderBy: { createdAt: "desc" },
-        }),
+    db.document.findMany({
+      where: {
+        OR: [
+          ...(instrumentIds.length > 0 ? [{ instrumentId: { in: instrumentIds } }] : []),
+          { stakeholderId: params.id },
+        ],
+      },
+      include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 }, instrument: true },
+      orderBy: { createdAt: "desc" },
+    }),
     db.stakeholderAccess.count({ where: { stakeholderId: stakeholder.id } }),
   ]);
 
@@ -152,12 +155,13 @@ export default async function StakeholderPage({ params }: { params: { id: string
       })}
 
       <h2>Document repository</h2>
+      <p>
+        <Link href={`/documents?entityId=${stakeholder.entityId}&stakeholderId=${params.id}`}>
+          + Upload a document for {stakeholder.name}
+        </Link>
+      </p>
       {documents.length === 0 && (
-        <p style={{ color: theme.inkMuted }}>
-          No documents on file for this stakeholder's instruments yet — see Document's doc comment in
-          prisma/schema.prisma: this app stores a pointer into an e-signature vendor's storage per document, not
-          the file itself, and nothing populates that yet without a vendor connection.
-        </p>
+        <p style={{ color: theme.inkMuted }}>Nothing retained for this stakeholder yet — upload one above.</p>
       )}
       {documents.length > 0 && (
         <ListingTable
@@ -165,11 +169,11 @@ export default async function StakeholderPage({ params }: { params: { id: string
           rows={documents.map((d) => ({
             key: d.id,
             cells: [
-              d.title,
+              <Link href={`/documents/${d.id}/analysis`}>{d.title}</Link>,
               d.instrument ? <Link href={`/instruments/${d.instrument.id}`}>{d.instrument.type}</Link> : "—",
               d.versions[0]?.status ?? "—",
-              d.versions[0]?.storageUrl ? (
-                <a href={d.versions[0].storageUrl} target="_blank" rel="noreferrer">
+              d.versions[0]?.storageUrl || d.versions[0]?.storagePath ? (
+                <a href={`/api/documents/${d.id}/download`} target="_blank" rel="noreferrer">
                   Open
                 </a>
               ) : (

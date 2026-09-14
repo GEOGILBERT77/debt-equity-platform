@@ -330,6 +330,60 @@ test("validateInstrumentTerms: REVOLVER rejects a commitmentEnd on or before com
   }
 });
 
+test("validateInstrumentTerms: REVOLVER's drawnBalance (v0.38.0) is entirely optional, but validates its shape when present", () => {
+  // Omitted entirely — every REVOLVER recorded before this field existed — is fine, as
+  // long as one of commitmentFee/deferredFees is still present.
+  assert.doesNotThrow(() =>
+    validateInstrumentTerms("REVOLVER", {
+      commitmentFee: { totalCommitmentFee: "20000", commitmentStart: "2025-01-01", commitmentEnd: "2027-01-01" },
+    })
+  );
+
+  assert.doesNotThrow(() =>
+    validateInstrumentTerms("REVOLVER", {
+      commitmentFee: { totalCommitmentFee: "20000", commitmentStart: "2025-01-01", commitmentEnd: "2027-01-01" },
+      drawnBalance: {
+        initialPrincipal: "0",
+        startDate: "2025-01-01",
+        rateSegments: [{ effectiveDate: "2025-01-01", annualRate: "0.08" }],
+        principalEvents: [{ date: "2025-04-01", amount: "400000" }],
+        interestPayments: [{ date: "2025-12-31", amount: "10000" }],
+        dayCountConvention: "ACT/365",
+      },
+    })
+  );
+
+  try {
+    validateInstrumentTerms("REVOLVER", {
+      commitmentFee: { totalCommitmentFee: "20000", commitmentStart: "2025-01-01", commitmentEnd: "2027-01-01" },
+      drawnBalance: { initialPrincipal: "0" }, // missing startDate and rateSegments
+    });
+    assert.fail("should have thrown");
+  } catch (err) {
+    const paths = issuePaths(err);
+    assert.ok(paths.includes("drawnBalance.startDate"));
+    assert.ok(paths.includes("drawnBalance.rateSegments"));
+  }
+
+  try {
+    validateInstrumentTerms("REVOLVER", {
+      commitmentFee: { totalCommitmentFee: "20000", commitmentStart: "2025-01-01", commitmentEnd: "2027-01-01" },
+      drawnBalance: {
+        initialPrincipal: "0",
+        startDate: "2025-01-01",
+        rateSegments: [{ effectiveDate: "2025-01-01", annualRate: "0.08" }],
+        principalEvents: [{ date: "2025-04-01" }], // missing amount
+        dayCountConvention: "WEEKLY", // not a real convention
+      },
+    });
+    assert.fail("should have thrown");
+  } catch (err) {
+    const paths = issuePaths(err);
+    assert.ok(paths.includes("drawnBalance.principalEvents[0].amount"));
+    assert.ok(paths.includes("drawnBalance.dayCountConvention"));
+  }
+});
+
 test("validateInstrumentTerms: WARRANT requires classification, and only validates remeasurement's shape when present (its requiredness is a dispatch.ts concern, not a shape one)", () => {
   assert.doesNotThrow(() =>
     validateInstrumentTerms("WARRANT", {

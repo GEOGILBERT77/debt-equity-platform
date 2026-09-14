@@ -422,6 +422,10 @@ export function NavBar({
         Communications
       </Link>
 
+      <Link href={withEntityId("/documents", entityId)} style={navLinkStyle} onClick={() => setOpenMenu(null)}>
+        Documents
+      </Link>
+
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <Link href="/help" style={navLinkStyle} onClick={() => setOpenMenu(null)}>
           Help

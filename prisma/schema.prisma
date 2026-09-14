@@ -21,10 +21,21 @@
 //    existing row. If you ever find code UPDATE-ing a row in this table, that's the
 //    architecture requirement being violated, not a valid shortcut.
 //
-// 3. Documents point at a `storageUrl` rather than storing file bytes in Postgres —
-//    per the earlier stack decision to buy the e-signature/redlining workflow (PandaDoc/
-//    DocuSign) rather than build one, this table is a pointer into that vendor's
-//    storage plus a status column, not a document store of its own.
+// 3. SUPERSEDED IN PART (v0.47.0): this note originally said Documents point at a
+//    `storageUrl` rather than storing file bytes in Postgres, because of an earlier
+//    stack decision to buy the e-signature/redlining workflow (PandaDoc/DocuSign)
+//    rather than build one — this table was purely a pointer into that vendor's
+//    storage plus a status column, not a document store of its own. George then asked,
+//    verbatim, to actually "retain all contracts/agreements" and link them to
+//    investors in the cap table — real document retention this app owns, not just a
+//    pointer into someone else's system. `DocumentVersion` now supports BOTH: the
+//    original `storageUrl` (still there, still nullable-by-nature, for anyone still
+//    pointing at PandaDoc/DocuSign) and a new `storagePath` (a Supabase Storage object
+//    key this app actually uploaded and owns — see supabaseStorage.ts). A given version
+//    has exactly one or the other, never neither. `Document` also gained a
+//    `stakeholderId` — the vast majority of what gets uploaded (an option agreement, a
+//    stock purchase agreement, a side letter) belongs to a specific investor/
+//    stakeholder, not just an instrument or the entity in the abstract.
 //
 // 4. Multi-tenancy is a join table (EntityAccess), not a `tenantId` column on every
 //    row. A user's access is to an ENTITY (and everything under it — stakeholders,
@@ -112,6 +123,8 @@ model Entity {
   defaultForUsers User[] @relation("UserDefaultEntity")
   /// v0.38.0 — see PerformanceCondition's own doc comment.
   performanceConditions PerformanceCondition[]
+  /// v0.47.0 — see ContractAnalysis's own doc comment.
+  contractAnalyses ContractAnalysis[]
 }
 
 /// One real person who can log into this app — as distinct from a Stakeholder, which
@@ -164,6 +177,9 @@ model User {
   recordedShareDispositions ShareDispositionEvent[] @relation("ShareDispositionRecordedBy")
   /// v0.46.0 — reverse side of InstrumentForfeitureEvent.recordedByUserId.
   recordedInstrumentForfeitures InstrumentForfeitureEvent[] @relation("InstrumentForfeitureRecordedBy")
+  /// v0.47.0 — reverse sides of the document library's attribution columns.
+  uploadedDocuments Document[] @relation("DocumentUploadedBy")
+  requestedContractAnalyses ContractAnalysis[] @relation("ContractAnalysisRequestedBy")
   filedTaxFilingRecords     TaxFilingRecord[]       @relation("TaxFilingRecordFiledBy")
   /// v0.35.0 — reverse side of the stakeholder portal's invite system (see
   /// PortalInvite below): which admin generated a given invite, for the same
@@ -285,6 +301,9 @@ model Stakeholder {
   /// to enforce that; `portalAccess` is empty until someone actually accepts an invite.
   portalAccess  StakeholderAccess[]
   portalInvites PortalInvite[]
+  /// v0.47.0 — see Document.stakeholderId's own doc comment. Queried directly by
+  /// GET /api/stakeholders/:id/documents (StakeholderDocumentsPanel.tsx's side panel).
+  documents     Document[]
 
   @@index([entityId])
 }
@@ -757,20 +776,52 @@ model JournalLine {
   @@index([journalEntryId])
 }
 
-/// A pointer into the e-signature/redlining vendor's storage (PandaDoc/DocuSign), plus
-/// a status column — not a document store. See design note #3 at the top of this file.
+/// The document library (broadened v0.47.0 — see design note #3 at the top of this
+/// file for why this used to be vendor-pointer-only and no longer is). A `Document` is
+/// the logical record ("Jane Doe's Series A Stock Purchase Agreement"); its actual
+/// file content lives on `DocumentVersion`, potentially more than one version over
+/// time (a redline, a fully-executed copy).
 model Document {
-  id           String            @id @default(cuid())
-  entityId     String
-  entity       Entity            @relation(fields: [entityId], references: [id])
-  instrumentId String?
-  instrument   Instrument?       @relation(fields: [instrumentId], references: [id])
-  title        String
-  versions     DocumentVersion[]
-  createdAt    DateTime          @default(now())
+  id            String            @id @default(cuid())
+  entityId      String
+  entity        Entity            @relation(fields: [entityId], references: [id])
+  instrumentId  String?
+  instrument    Instrument?       @relation(fields: [instrumentId], references: [id])
+  /// v0.47.0 — who this document is ABOUT, independent of whether it's also tied to
+  /// one specific instrument. Most uploads (an option agreement, a stock purchase
+  /// agreement, an NDA, a side letter) are naturally "this investor's paperwork" even
+  /// when they also happen to reference a specific instrument — and some (a subscription
+  /// agreement covering several instruments at once, a general correspondence) aren't
+  /// tied to any one instrument at all. NULLABLE: a genuinely entity-wide document (a
+  /// certificate of incorporation, a board policy) has neither this nor instrumentId
+  /// set. This is what src/app/components/StakeholderDocumentsPanel.tsx queries by, and
+  /// what makes "click an investor in the cap table, see everything on file for them"
+  /// possible without depending on every document being instrument-scoped first.
+  stakeholderId String?
+  stakeholder   Stakeholder?      @relation(fields: [stakeholderId], references: [id])
+  title         String
+  /// v0.47.0 — free-text label ("Stock Purchase Agreement," "Option Agreement," "NDA,"
+  /// "Side Letter") — deliberately NOT an enum. The set of document types a company
+  /// actually retains varies too much across clients to pin down in advance, and
+  /// getting this wrong would mean either a disruptive enum migration or an "OTHER"
+  /// bucket that swallows everything — the same reasoning DocumentVersion.status below
+  /// already uses for its own vendor-status vocabulary. NULLABLE — uncategorized is a
+  /// normal state, not a data problem.
+  category      String?
+  /// v0.47.0 — who uploaded this, for the same audit-trail reasons
+  /// InstrumentTermVersion.createdByUserId exists. NULLABLE for the same reason that
+  /// field is — a direct-SQL-inserted row has nothing to set this from.
+  uploadedByUserId String?
+  uploadedByUser   User?          @relation("DocumentUploadedBy", fields: [uploadedByUserId], references: [id])
+  versions      DocumentVersion[]
+  /// v0.47.0 — an AI-proposed accounting analysis run against one of this document's
+  /// versions. See ContractAnalysis's own doc comment.
+  contractAnalyses ContractAnalysis[]
+  createdAt     DateTime          @default(now())
 
   @@index([entityId])
   @@index([instrumentId])
+  @@index([stakeholderId])
 }
 
 model DocumentVersion {
@@ -778,14 +829,137 @@ model DocumentVersion {
   documentId    String
   document      Document @relation(fields: [documentId], references: [id])
   versionNumber Int
-  /// URL/reference into the vendor's storage — this is NOT the file itself.
-  storageUrl    String
-  /// draft | sent | redlined | signed | executed — kept as a plain string rather than
+  /// URL/reference into an e-signature/redlining VENDOR's storage (PandaDoc/DocuSign) —
+  /// this is NOT the file itself, and this app never fetches or re-hosts whatever it
+  /// points to. Exactly one of this and `storagePath` below is set on any given row —
+  /// see `storagePath`'s own doc comment for the other case, which is now the more
+  /// common one now that this app stores files itself.
+  storageUrl    String?
+  /// v0.47.0 — the object key of a file THIS APP uploaded to its own Supabase Storage
+  /// bucket (see src/lib/storage/supabaseStorage.ts) — set instead of `storageUrl`
+  /// whenever the file was uploaded directly through this app's own document library,
+  /// rather than being a pointer to something living in PandaDoc/DocuSign. NEVER a
+  /// public URL — the bucket is private, and every download goes through
+  /// GET /api/documents/:documentId/download, which mints a short-lived signed URL on
+  /// demand and redirects to it (see that route's own doc comment for why a signed URL
+  /// is never stored directly on this row: it would go stale).
+  storagePath   String?
+  /// v0.47.0 — only meaningful alongside `storagePath` (a vendor pointer has no bytes
+  /// for this app to know the size/type of). Shown in the document library UI and used
+  /// to pick a sensible content-type when redirecting a download.
+  mimeType      String?
+  fileSizeBytes Int?
+  /// draft | sent | redlined | signed | executed | retained — kept as a plain string rather than
   /// an enum since the exact vendor's status vocabulary is what actually governs this.
   status        String
   createdAt     DateTime @default(now())
 
   @@unique([documentId, versionNumber])
+}
+
+enum ContractAnalysisStatus {
+  PENDING
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+
+/// v0.47.0 — George, verbatim: "allows users to upload a contract and the platform
+/// identifies what it is (option, debt, etc.) and proposes accounting treatment and
+/// memo justification for it (user should be able to select whether a memo draft is
+/// required, since not all option grants need a memo)... identify the potential
+/// accounting needs within a contract and reference ASC ... guidance to propose
+/// initial and subsequent accounting treatment."
+///
+/// One row per analysis RUN against one specific `DocumentVersion` — not a field on
+/// `Document`/`DocumentVersion` themselves, because re-running the analysis (a better
+/// prompt later, a corrected upload) should never destroy the previous attempt, and a
+/// single uploaded contract can reasonably be analyzed more than once. `documentVersionId`
+/// (not `documentId`) is the FK specifically because the file bytes an analysis actually
+/// read are pinned to one version — if someone uploads a corrected/re-signed version
+/// later, the earlier analysis stays truthfully attached to the version it was actually
+/// run against, not silently reattributed to whatever the "current" version becomes.
+///
+/// THIS IS AN AI-GENERATED PROPOSAL, NOT AN ACCOUNTING DETERMINATION — every field below
+/// (identifiedInstrumentType, ascReferences, initialTreatment, subsequentTreatment,
+/// memoDraft) is the Claude API's read of the uploaded document (see
+/// src/lib/ai/anthropicClient.ts and contractAnalysisPrompt.ts), surfaced for a
+/// qualified accountant to review, correct, and take responsibility for — never
+/// auto-applied anywhere else in this app (it does NOT create an Instrument, a
+/// JournalEntry, or anything else on its own). See the UI's own disclaimer text
+/// (src/app/documents/[id]/analysis/page.tsx) for the exact language shown to the user
+/// every time a result is displayed.
+///
+/// `memoRequested` is the user's own checkbox choice AT UPLOAD TIME ("not all option
+/// grants need a memo") — when false, `memoDraft` is always left null rather than
+/// generated-but-hidden, both to avoid the API cost of generating text nobody asked for
+/// and because a memo draft that exists but is never shown is exactly the kind of
+/// silent, unused state this codebase's other "honest, not fake" features (see
+/// communications/page.tsx, InvestorContactsTable.tsx's mailto rationale) avoid on
+/// principle.
+model ContractAnalysis {
+  id                 String                 @id @default(cuid())
+  documentVersionId  String
+  documentVersion    DocumentVersion        @relation(fields: [documentVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  /// Denormalized off documentVersion->document->entity purely so every query that
+  /// scopes by entity (access control, the document library list) doesn't need a
+  /// three-table join just to filter — same reasoning as other denormalized entityId
+  /// columns in this schema (e.g. this exact pattern doesn't appear elsewhere today,
+  /// but the access-control posture it enables mirrors requirePageEntityAccess's
+  /// existing entityId-first checks everywhere else).
+  entityId           String
+  entity             Entity                 @relation(fields: [entityId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  memoRequested      Boolean                @default(false)
+  status             ContractAnalysisStatus @default(PENDING)
+  /// The model's best guess at what kind of instrument this is — deliberately a free
+  /// string, NOT InstrumentType. A contract can be something InstrumentType has no
+  /// value for at all (an employment agreement, an NDA, a SAFE pre-conversion), and
+  /// forcing the model's answer into the existing enum would either lose that
+  /// information or require constantly widening InstrumentType for document
+  /// classification concerns that have nothing to do with what it exists for (the cap
+  /// table's own instrument records).
+  identifiedInstrumentType String?
+  /// "high" | "medium" | "low" — the model's own stated confidence in
+  /// identifiedInstrumentType, surfaced so a reviewer knows when to look harder rather
+  /// than take the classification at face value.
+  confidence         String?
+  summary            String?
+  /// Free-form JSON of whatever key terms the model extracted (grant date, quantity,
+  /// strike price, principal, interest rate, maturity, conversion features, etc.) —
+  /// deliberately untyped, same reasoning as Instrument.terms: what's relevant varies
+  /// entirely by what kind of contract this turned out to be, and this field is
+  /// display-only (see contractAnalysisPrompt.ts's validation — never fed into the
+  /// accounting engine).
+  keyTerms           Json?
+  /// Array of `{ reference: string, relevance: string }` (e.g. { reference: "ASC
+  /// 718-10-25", relevance: "..." }) — the specific ASC topic/subtopic citations the
+  /// model's proposed treatment relies on, each paired with why it applies to this
+  /// particular contract's terms rather than a bare citation list. See
+  /// contractAnalysisPrompt.ts's validateContractAnalysisResult for the shape this is
+  /// always normalized to before being persisted here.
+  ascReferences      Json?
+  initialTreatment   String?
+  subsequentTreatment String?
+  /// string[] — things the model flagged as needing a human's judgment call rather than
+  /// asserting an answer (an ambiguous term, a possible embedded derivative that would
+  /// need the bifurcation calculator, a missing exhibit) — see
+  /// src/app/reports/embedded-derivative-bifurcation and beneficial-conversion-feature
+  /// for the existing calculators a reviewer might be pointed toward from here.
+  openQuestions      Json?
+  /// Only ever populated when memoRequested is true — see this model's own doc comment.
+  memoDraft          String?
+  /// Populated only when status is FAILED — the reason the analysis didn't complete
+  /// (a Claude API error, an unreadable/corrupt file, a file type this app can't yet
+  /// extract text from), shown back to the user rather than a bare "something went
+  /// wrong" per this codebase's error-handling convention elsewhere.
+  errorMessage       String?
+  requestedByUserId  String?
+  requestedByUser    User?                  @relation("ContractAnalysisRequestedBy", fields: [requestedByUserId], references: [id])
+  createdAt          DateTime               @default(now())
+  analyzedAt         DateTime?
+
+  @@index([documentVersionId])
+  @@index([entityId])
 }
 
 /// v0.33.0 — stock option tax/compliance reporting (see src/lib/accounting/

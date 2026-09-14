@@ -16,7 +16,7 @@ import {
   StockOptionMarketConditionTerms,
 } from "../src/lib/accounting/dispatch.js";
 import { buildAnnualPeriods, buildMonthlyPeriods, buildCalendarMonthlyPeriods } from "../src/lib/accounting/dateMath.js";
-import { RevolverInputs } from "../src/lib/accounting/debtAmortization.js";
+import { RevolverInputs, CombinedRevolverInputs, buildRevolverSchedule, buildDailyAccrualSchedule } from "../src/lib/accounting/debtAmortization.js";
 import { ConventionalConvertibleNoteInputs } from "../src/lib/accounting/convertibleNote.js";
 import { ServiceConditionGrant } from "../src/lib/accounting/vesting.js";
 import { Decimal, ScheduleRow } from "../src/lib/accounting/types.js";
@@ -85,6 +85,68 @@ test("dispatch: REVOLVER — sums commitment fee and deferred fee amortization, 
 test("dispatch: REVOLVER — throws if neither a commitment fee nor deferred fees are supplied", () => {
   const builder = getScheduleBuilder("REVOLVER");
   assert.throws(() => builder({} as RevolverInputs, periods), /commitmentFee or a deferredFees/);
+});
+
+test("dispatch: REVOLVER with drawnBalance — matches buildCombinedRevolverSchedule directly (v0.38.0 wiring), and books the drawn-balance interest leg alongside the fee lines", () => {
+  const terms: CombinedRevolverInputs = {
+    commitmentFee: { totalCommitmentFee: "20000", commitmentStart: "2025-01-01", commitmentEnd: "2027-01-01" },
+    drawnBalance: {
+      initialPrincipal: "0",
+      startDate: "2025-01-01",
+      rateSegments: [{ effectiveDate: "2025-01-01", annualRate: "0.08" }],
+      // Two draws (v0.38.0 use case: "create a draw or two on the revolver") and one
+      // partial paydown, spanning both annual periods.
+      principalEvents: [
+        { date: "2025-04-01", amount: "400000" },
+        { date: "2025-10-01", amount: "150000" },
+        { date: "2026-04-01", amount: "-100000" },
+      ],
+      interestPayments: [{ date: "2025-12-31", amount: "10000" }],
+    },
+  };
+
+  const builder = getScheduleBuilder("REVOLVER");
+  const rows = builder(terms, periods);
+  assert.equal(rows.length, 2);
+
+  // The dispatcher should produce EXACTLY what manually composing the two underlying
+  // engines (already tested on their own in combinedRevolver.test.ts/dailyAccrualDebt.test.ts)
+  // would — this test is about the WIRING, not re-deriving the daily-accrual math.
+  const feeRows = buildRevolverSchedule(terms, periods);
+  const interestRows = buildDailyAccrualSchedule(terms.drawnBalance!, periods);
+  rows.forEach((row, i) => {
+    assert.equal(row.amount.toFixed(4), feeRows[i].amount.plus(interestRows[i].amount).toFixed(4));
+    assert.equal(row.endingBalance!.toFixed(4), interestRows[i].endingBalance.toFixed(4));
+  });
+
+  const je = journalEntryForRow("REVOLVER", rows[0]);
+  // "Cash" appears in TWO separate line pairs here (the fee leg and the interest leg),
+  // so summing matching lines rather than a naive account-keyed lookup (which would
+  // silently drop one of them) is the correct way to check it.
+  const linesFor = (account: string) => je.lines.filter((l) => l.account === account);
+  const sumField = (lines: typeof je.lines, field: "debit" | "credit") =>
+    lines.reduce((s, l) => s + Number(l[field] ?? 0), 0);
+
+  assert.equal(sumField(linesFor("Commitment Fee Expense"), "debit").toFixed(2), "10000.00"); // unchanged fee leg
+  assert.equal(sumField(linesFor("Interest Expense"), "debit").toFixed(4), interestRows[0].amount.toFixed(4));
+  assert.equal(sumField(linesFor("Cash"), "credit").toFixed(2), (10000 + 10000).toFixed(2)); // 10,000 commitment fee cash + 10,000 interest cash paid
+  assert.ok(linesFor("Accrued Interest Payable").length > 0, "the unpaid remainder of the interest accrual still posts somewhere");
+  const totalDebit = je.lines.reduce((s, l) => s + Number(l.debit ?? 0), 0);
+  const totalCredit = je.lines.reduce((s, l) => s + Number(l.credit ?? 0), 0);
+  assert.equal(totalDebit.toFixed(4), totalCredit.toFixed(4));
+});
+
+test("dispatch: REVOLVER without drawnBalance is unaffected by the v0.38.0 wiring — identical to buildRevolverSchedule's own fee-only output", () => {
+  const terms: RevolverInputs = {
+    commitmentFee: { totalCommitmentFee: "20000", commitmentStart: "2025-01-01", commitmentEnd: "2027-01-01" },
+    deferredFees: [{ id: "closing", amount: "60000", amortizationStart: "2025-01-01", amortizationEnd: "2027-01-01" }],
+  };
+  const rows = getScheduleBuilder("REVOLVER")(terms, periods);
+  const directRows = buildRevolverSchedule(terms, periods);
+  rows.forEach((row, i) => {
+    assert.equal(row.amount.toFixed(4), directRows[i].amount.toFixed(4));
+    assert.equal(row.endingBalance?.toFixed(4), directRows[i].endingBalance?.toFixed(4));
+  });
 });
 
 test("dispatch: CONVERTIBLE_NOTE — runs the ordinary effective-interest engine and carries the conversion price through meta", () => {

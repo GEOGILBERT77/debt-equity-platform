@@ -1,6 +1,6 @@
 {
   "name": "debt-equity-platform",
-  "version": "0.46.1",
+  "version": "0.47.0",
   "private": true,
   "description": "Core accounting engine and data model for a debt & equity management platform.",
   "type": "module",
@@ -17,7 +17,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "@prisma/client": "^5.18.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@supabase/supabase-js": "^2.45.4",
+    "mammoth": "^1.8.0"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { theme, statusPillStyle } from "@/lib/theme";
 import { ListingTable } from "@/app/components/ListingTable";
+import { StakeholderDocumentsTrigger } from "@/app/components/StakeholderDocumentsTrigger";
 
 export interface InvestorContactRow {
   id: string;
@@ -217,6 +218,7 @@ export function InvestorContactsTable({ entityId, investors }: { entityId: strin
           { label: "Email" },
           { label: "Phone" },
           { label: "Portal status" },
+          { label: "" },
         ]}
         rows={investors.map((inv) => ({
           key: inv.id,
@@ -229,6 +231,7 @@ export function InvestorContactsTable({ entityId, investors }: { entityId: strin
             inv.email || <span style={{ color: theme.inkMuted }}>—</span>,
             inv.phone || <span style={{ color: theme.inkMuted }}>—</span>,
             <StatusCell status={inv.status} />,
+            <StakeholderDocumentsTrigger entityId={entityId} stakeholderId={inv.id} stakeholderName={inv.name} />,
           ],
         }))}
       />

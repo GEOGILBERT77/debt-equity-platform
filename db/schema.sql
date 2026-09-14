@@ -49,6 +49,7 @@ CREATE TYPE "TaxFilingStatus" AS ENUM ('PENDING', 'FILED', 'NOT_REQUIRED');
 -- v0.44.0 — see prisma/schema.prisma's doc comment on this enum and on
 -- Stakeholder.investorType/contactName for the full reasoning ("Investor Contacts" page).
 CREATE TYPE "InvestorType" AS ENUM ('INDIVIDUAL', 'INSTITUTION');
+CREATE TYPE "ForfeitureEventType" AS ENUM ('FORFEITED', 'EXPIRED');
 
 -- =============================================================================
 -- User / EntityAccess (multi-tenancy — see prisma/schema.prisma's design note #4)
@@ -295,25 +296,63 @@ CREATE INDEX "JournalLine_journalEntryId_idx" ON "JournalLine"("journalEntryId")
 -- =============================================================================
 -- Document / DocumentVersion
 -- =============================================================================
+-- v0.47.0 — broadened into a real document library (was vendor-pointer-only; see the
+-- "design note #3" comment at the top of prisma/schema.prisma). "storageUrl" NOT NULL
+-- relaxed to nullable, and "stakeholderId"/"category"/"uploadedByUserId" added on
+-- Document; "storagePath"/"mimeType"/"fileSizeBytes" added on DocumentVersion.
 CREATE TABLE "Document" (
   "id" TEXT PRIMARY KEY,
   "entityId" TEXT NOT NULL REFERENCES "Entity"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   "instrumentId" TEXT REFERENCES "Instrument"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "stakeholderId" TEXT REFERENCES "Stakeholder"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   "title" TEXT NOT NULL,
+  "category" TEXT,
+  "uploadedByUserId" TEXT REFERENCES "User"("id"),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX "Document_entityId_idx" ON "Document"("entityId");
 CREATE INDEX "Document_instrumentId_idx" ON "Document"("instrumentId");
+CREATE INDEX "Document_stakeholderId_idx" ON "Document"("stakeholderId");
 
 CREATE TABLE "DocumentVersion" (
   "id" TEXT PRIMARY KEY,
   "documentId" TEXT NOT NULL REFERENCES "Document"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   "versionNumber" INTEGER NOT NULL,
-  "storageUrl" TEXT NOT NULL,
+  "storageUrl" TEXT,
+  "storagePath" TEXT,
+  "mimeType" TEXT,
+  "fileSizeBytes" INTEGER,
   "status" TEXT NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE ("documentId", "versionNumber")
 );
+
+-- v0.47.0 — ContractAnalysis: AI-proposed classification/treatment/memo for one
+-- uploaded DocumentVersion. See its doc comment in prisma/schema.prisma.
+CREATE TYPE "ContractAnalysisStatus" AS ENUM ('PENDING', 'ANALYZING', 'ANALYZED', 'FAILED');
+
+CREATE TABLE "ContractAnalysis" (
+  "id" TEXT PRIMARY KEY,
+  "documentVersionId" TEXT NOT NULL REFERENCES "DocumentVersion"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "entityId" TEXT NOT NULL REFERENCES "Entity"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "memoRequested" BOOLEAN NOT NULL DEFAULT false,
+  "status" "ContractAnalysisStatus" NOT NULL DEFAULT 'PENDING',
+  "identifiedInstrumentType" TEXT,
+  "confidence" TEXT,
+  "summary" TEXT,
+  "keyTerms" JSONB,
+  "ascReferences" JSONB,
+  "initialTreatment" TEXT,
+  "subsequentTreatment" TEXT,
+  "openQuestions" JSONB,
+  "memoDraft" TEXT,
+  "errorMessage" TEXT,
+  "requestedByUserId" TEXT REFERENCES "User"("id"),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "analyzedAt" TIMESTAMP(3)
+);
+CREATE INDEX "ContractAnalysis_documentVersionId_idx" ON "ContractAnalysis"("documentVersionId");
+CREATE INDEX "ContractAnalysis_entityId_idx" ON "ContractAnalysis"("entityId");
 
 -- =============================================================================
 -- AmortizationScheduleApproval / AmortizationScheduleRow (v0.22.0) — the full,
@@ -378,6 +417,23 @@ CREATE TABLE "ShareDispositionEvent" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX "ShareDispositionEvent_exerciseEventId_idx" ON "ShareDispositionEvent"("exerciseEventId");
+
+-- v0.46.0 — InstrumentForfeitureEvent: real forfeiture/expiration event log feeding the
+-- ASC 718/SEC-10-K award activity roll-forward. See prisma/schema.prisma's doc comment
+-- on this model for why it exists as its own event log rather than an InstrumentStatus
+-- value or another InstrumentTermVersion.
+CREATE TABLE "InstrumentForfeitureEvent" (
+  "id" TEXT PRIMARY KEY,
+  "instrumentId" TEXT NOT NULL REFERENCES "Instrument"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "forfeitureDate" TIMESTAMP(3) NOT NULL,
+  "quantityForfeited" NUMERIC(24,6) NOT NULL,
+  "eventType" "ForfeitureEventType" NOT NULL DEFAULT 'FORFEITED',
+  "reason" TEXT,
+  "recordedByUserId" TEXT REFERENCES "User"("id"),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "InstrumentForfeitureEvent_instrumentId_idx" ON "InstrumentForfeitureEvent"("instrumentId");
+CREATE INDEX "InstrumentForfeitureEvent_forfeitureDate_idx" ON "InstrumentForfeitureEvent"("forfeitureDate");
 
 CREATE TABLE "TaxFilingRecord" (
   "id" TEXT PRIMARY KEY,

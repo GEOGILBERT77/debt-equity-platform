@@ -70,13 +70,16 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
   const instrumentIds = stakeholder.instruments.map((i) => i.id);
 
   const [documents, exerciseEvents, otherStakeholders] = await Promise.all([
-    instrumentIds.length === 0
-      ? []
-      : db.document.findMany({
-          where: { instrumentId: { in: instrumentIds } },
-          include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
-          orderBy: { createdAt: "desc" },
-        }),
+    db.document.findMany({
+      where: {
+        OR: [
+          ...(instrumentIds.length > 0 ? [{ instrumentId: { in: instrumentIds } }] : []),
+          { stakeholderId: params.stakeholderId },
+        ],
+      },
+      include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+      orderBy: { createdAt: "desc" },
+    }),
     instrumentIds.length === 0
       ? []
       : db.optionExerciseEvent.findMany({
@@ -94,6 +97,12 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
     list.push(d);
     documentsByInstrument.set(d.instrumentId, list);
   }
+  // v0.47.0 — documents linked directly to this stakeholder (not tied to any one
+  // instrument, e.g. a subscription agreement or general correspondence) — see the
+  // query above and Document.stakeholderId's doc comment in prisma/schema.prisma.
+  // Shown in their own section below rather than folded into a per-instrument list,
+  // since they aren't about any one instrument.
+  const stakeholderLevelDocuments = documents.filter((d) => !d.instrumentId);
   const exercisesByInstrument = new Map<string, typeof exerciseEvents>();
   for (const e of exerciseEvents) {
     const list = exercisesByInstrument.get(e.instrumentId) ?? [];
@@ -268,8 +277,8 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
                 <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
                   {documentsByInstrument.get(inst.id)!.map((d) => (
                     <li key={d.id}>
-                      {d.versions[0]?.storageUrl ? (
-                        <a href={d.versions[0].storageUrl} target="_blank" rel="noreferrer">
+                      {d.versions[0]?.storageUrl || d.versions[0]?.storagePath ? (
+                        <a href={`/api/portal/documents/${d.id}/download`} target="_blank" rel="noreferrer">
                           {d.title}
                         </a>
                       ) : (
@@ -284,6 +293,26 @@ export default async function PortalStakeholderPage({ params }: { params: { stak
           </div>
         );
       })}
+
+      {stakeholderLevelDocuments.length > 0 && (
+        <>
+          <h2 style={{ marginTop: "1.5rem" }}>Documents</h2>
+          <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+            {stakeholderLevelDocuments.map((d) => (
+              <li key={d.id}>
+                {d.versions[0]?.storageUrl || d.versions[0]?.storagePath ? (
+                  <a href={`/api/portal/documents/${d.id}/download`} target="_blank" rel="noreferrer">
+                    {d.title}
+                  </a>
+                ) : (
+                  d.title
+                )}
+                {d.versions[0]?.status && <span style={{ color: theme.inkMuted }}> — {d.versions[0].status}</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {grant.boardObserver && boardRollup && boardOwnership && (
         <>

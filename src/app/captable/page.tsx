@@ -7,6 +7,7 @@ import { buildCapTableRollup, aggregateByStakeholder, CapTableInstrumentInput } 
 import { classKeyForInstrument, buildCapTableGroupings } from "@/lib/accounting/capTableGrouping";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { StakeholderRowActions } from "@/app/components/StakeholderRowActions";
+import { StakeholderDocumentsTrigger } from "@/app/components/StakeholderDocumentsTrigger";
 import { CloseAllInstrumentsButton } from "@/app/components/CloseAllInstrumentsButton";
 import { CapTableOwnershipTable } from "@/app/components/CapTableOwnershipTable";
 import { ListingTable } from "@/app/components/ListingTable";
@@ -213,7 +214,7 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
 
       <h2>All instruments (detail)</h2>
       <ListingTable
-        columns={[{ label: "Stakeholder" }, { label: "Type" }, { label: "Email" }, { label: "Instruments" }, { label: "" }]}
+        columns={[{ label: "Stakeholder" }, { label: "Type" }, { label: "Email" }, { label: "Instruments" }, { label: "" }, { label: "" }]}
         rows={stakeholders.map((s) => ({
           key: s.id,
           cells: [
@@ -233,6 +234,7 @@ export default async function CapTablePage({ searchParams }: { searchParams: { e
                 ))}
               </>
             ),
+            <StakeholderDocumentsTrigger entityId={entityId} stakeholderId={s.id} stakeholderName={s.name} />,
             <StakeholderRowActions
               entityId={entityId}
               stakeholderId={s.id}

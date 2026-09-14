@@ -99,6 +99,22 @@ export default function HelpPage() {
         </li>
       </ol>
 
+      <h2>Document library &amp; AI contract analysis</h2>
+      <p style={{ color: theme.inkMuted }}>
+        The <strong>Documents</strong> page (top nav) is where every contract and agreement gets retained —
+        upload a file there and optionally link it to a specific investor and/or instrument. Click{" "}
+        <strong>Documents</strong> next to any investor on the <strong>Cap table</strong> or{" "}
+        <strong>Investor Contacts</strong> page to see everything on file for them without leaving that page.
+      </p>
+      <p style={{ color: theme.inkMuted }}>
+        From a document's own page, <strong>Run AI analysis</strong> sends it to Claude and proposes what kind
+        of instrument it is, which ASC guidance applies, and how it should likely be accounted for — check the{" "}
+        <strong>draft a memo</strong> box only when you actually need one (not every option grant does).{" "}
+        <strong>This is always a proposal for you to review, never a final answer</strong> — it doesn't create
+        or change anything else in the app on its own, and every result it produces should be checked against
+        the actual contract before you rely on it.
+      </p>
+
       <h2>New transactions vs. Reports calculators</h2>
       <p style={{ color: theme.inkMuted }}>
         <strong>New transactions</strong> permanently records an instrument against one of your entities —
