@@ -6,7 +6,10 @@ import { theme } from "@/lib/theme";
 import { ListingTable } from "@/app/components/ListingTable";
 
 /**
- * Modification audit report — "there needs to be an audit report of all
+ * Modification History report (label renamed from "Modification audit" per George's
+ * v0.46.0 nav-restructuring request — the route/URL and internal report-builder name
+ * are unchanged, this is a display-text-only rename) — "there needs to be an audit
+ * report of all
  * modifications made... so a user can search for all modifications over a date
  * range and it provides the instruments that were modified and summary info of which
  * terms changed and the impact on the reporting/financial statements." See
@@ -61,7 +64,7 @@ export default async function ModificationAuditPage({
         <Link href="/">&larr; All entities</Link> {" · "}
         <Link href={`/reports/audit-trail?entityId=${entityId}`}>Audit trail</Link>
       </p>
-      <h1>Modification audit</h1>
+      <h1>Modification History</h1>
       <p style={{ color: theme.inkMuted }}>
         Every terms MODIFICATION recorded for this entity — never the original grant, never a correction (see{" "}
         <Link href={`/reports/audit-trail?entityId=${entityId}`}>audit trail</Link> for the full chronological

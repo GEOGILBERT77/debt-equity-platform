@@ -34,11 +34,11 @@ export default function HelpPage() {
         </li>
         <li>
           Everything you've recorded shows up on that entity's <strong>Cap table</strong> and in{" "}
-          <strong>GAAP reports</strong> — journal entries, financial statements, and the audit trail.
+          <strong>Reports</strong> — journal entries, financial statements, and the audit trail.
         </li>
         <li>
           On the cap table, click <strong>Close all instruments through today</strong> to run the accounting
-          engine for every instrument at once and store the results — GAAP reports read only from what's been
+          engine for every instrument at once and store the results — Reports read only from what's been
           closed this way, never from a live recomputation. You can also close one instrument at a time from
           its own page if you only need to update that one.
         </li>
@@ -48,7 +48,7 @@ export default function HelpPage() {
           you click <strong>Approve this schedule</strong> there. This is a real, required checkpoint before a
           grant "goes live," but it's a ONE-TIME step: once approved, nothing further is needed unless the
           grant's terms change later. Every approved stock option gets combined into one company-wide total on
-          the "Stock option amortization" report under <strong>GAAP reports</strong>, and the "Stock option
+          the "Stock option amortization" report under <strong>Reports → Accounting</strong>, and the "Stock option
           forecast" report there splits that into what's already recognized vs. what's still ahead, plus a
           what-if calculator for planned future grants.
         </li>
@@ -68,8 +68,8 @@ export default function HelpPage() {
           preview yet.
         </li>
         <li>
-          Every modification ever committed shows up on the <strong>Modification audit</strong> report under{" "}
-          <strong>GAAP reports</strong> — search it by the date a modification was actually entered (not when
+          Every modification ever committed shows up on the <strong>Modification History</strong> report under{" "}
+          <strong>Reports → Accounting</strong> — search it by the date a modification was actually entered (not when
           its terms take effect) to see which instruments were touched, a summary of which terms changed, and
           the dollar impact on the amortization schedule for each one.
         </li>
@@ -84,16 +84,25 @@ export default function HelpPage() {
         <li>
           Every grant's full terms — grant date, quantity, strike price (stock options), grant-date fair value,
           vesting, service period, and approval status — are listed by grant ID on the{" "}
-          <strong>Grants report</strong> under <strong>GAAP reports</strong>. Strike price is disclosure-only:
+          <strong>Grants report</strong> under <strong>Reports → Accounting</strong>. Strike price is disclosure-only:
           it's captured on the grant (required for a stock option) and shown on this report, but it isn't used
           anywhere in the ASC 718 expense calculation, which depends only on grant-date fair value.
         </li>
+        <li>
+          A stock option, RSU, or restricted stock grant that lapsed — forfeited before vesting, or a vested
+          option whose exercise window ran out — should be recorded on that instrument's own page under{" "}
+          <strong>Forfeitures &amp; expirations</strong>. This is what feeds the "Forfeited"/"Expired" columns
+          on the <strong>ASC 718 disclosures</strong> report (under <strong>Reports → Financial Statements</strong>) —
+          that report's roll-forward (beginning balance, additions, exercises/vesting, forfeitures, ending
+          balance) is computed entirely from what's actually been recorded across the app, for a date range and
+          award-type/vesting-class combination you choose, never typed in by hand.
+        </li>
       </ol>
 
-      <h2>New transactions vs. GAAP reports calculators</h2>
+      <h2>New transactions vs. Reports calculators</h2>
       <p style={{ color: theme.inkMuted }}>
         <strong>New transactions</strong> permanently records an instrument against one of your entities —
-        it's the real data entry. Most of what's under <strong>GAAP reports</strong> is a standalone
+        it's the real data entry. Most of what's under the <strong>Reports → ASC calculators</strong> group is a standalone
         calculator instead: you type in the terms of a scenario and get the computed accounting treatment
         (journal entries, a schedule, a disclosure) back, without it being saved anywhere. Use the
         calculators to check the math on something before — or without — entering it permanently.

@@ -13,7 +13,8 @@ import { theme } from "@/lib/theme";
  * (home, /reports, /captable, etc.) — those links now live here instead, organized
  * the way an actual CPA using this day to day asked for: Home, a hierarchical "New
  * transactions" menu (grouped Equity/Debt, then by specific instrument type), the
- * cap table, GAAP reports, tax/compliance reports, communications, and help.
+ * cap table, Reports (GAAP — Accounting / Financial Statements / ASC calculators),
+ * tax/compliance reports, communications, and help.
  *
  * ENTITY CONTEXT: this whole app is multi-entity (see prisma/schema.prisma's
  * Entity/EntityAccess model), and most of the destinations below only make sense for
@@ -137,23 +138,48 @@ type ReportLink = { label: string; href: string; scoped?: boolean };
 
 const GAAP_REPORT_GROUPS: { heading: string; items: ReportLink[] }[] = [
   {
-    heading: "Entity reports",
+    // v0.46.0 — George, verbatim: "GAAP reports in the nav bar should just say
+    // 'Reports.' There should be sub sections for: Accounting, Financial Statements.
+    // within accounting should be journal entries, audit trail, modification audit
+    // (rename to Modification History), Stock Option Amortization, Stock Option
+    // Forecast." The remaining former "Entity reports" items (grants, cap table
+    // export, stock option tax/compliance, debt modification/extinguishment) aren't
+    // individually called out in that list, but nothing there suggested dropping
+    // them — they're day-to-day accounting/compliance reports too, so they stay in
+    // this group rather than being orphaned into "ASC calculators" below (which is
+    // specifically the standalone-calculator group, not where a real database report
+    // belongs). "Modification audit" is a label-only rename here — the route (and
+    // this page's own doc comment) still say "modification-audit"/"Modification
+    // audit" in a couple of other spots; see modification-audit/page.tsx's h1,
+    // grants/page.tsx's link text, and help/page.tsx for the matching renames.
+    heading: "Accounting",
     items: [
       { label: "Journal entries", href: "/reports", scoped: true },
-      { label: "Financial statements", href: "/reports/financial-statements", scoped: true },
       { label: "Audit trail", href: "/reports/audit-trail", scoped: true },
-      { label: "Modification audit", href: "/reports/modification-audit", scoped: true },
+      { label: "Modification History", href: "/reports/modification-audit", scoped: true },
+      { label: "Stock option amortization", href: "/reports/stock-option-amortization", scoped: true },
+      { label: "Stock option forecast", href: "/reports/stock-option-forecast", scoped: true },
       { label: "Grants report", href: "/reports/grants", scoped: true },
       { label: "Cap table export (CSV)", href: "/api/reports/cap-table-export", scoped: true },
       { label: "Stock option tax/compliance", href: "/reports/option-tax-compliance", scoped: true },
       { label: "Debt modification / extinguishment", href: "/reports/debt-modification", scoped: true },
-      { label: "Stock option amortization", href: "/reports/stock-option-amortization", scoped: true },
-      { label: "Stock option forecast", href: "/reports/stock-option-forecast", scoped: true },
     ],
   },
   {
-    // v0.21.0: "Debt modification / extinguishment" moved up into "Entity reports"
-    // (below) since it's now a real database report, not a calculator — see
+    // v0.46.0 — "Financial statements should have the 718 disclosures" — the real,
+    // database-driven ASC 718 award roll-forward report (awardRollforward.ts) lives
+    // here, distinct from the hand-entry "Equity comp footnote disclosures" calculator
+    // below (which stays in "ASC calculators" — it's still useful for quick what-if
+    // scenarios not tied to actual recorded data).
+    heading: "Financial Statements",
+    items: [
+      { label: "Financial statements", href: "/reports/financial-statements", scoped: true },
+      { label: "ASC 718 disclosures", href: "/reports/asc-718-disclosures", scoped: true },
+    ],
+  },
+  {
+    // v0.21.0: "Debt modification / extinguishment" moved up into "Accounting"
+    // above since it's now a real database report, not a calculator — see
     // REPORTS-CONVERSION-PLAN.md for which of the rest of this group are next.
     heading: "ASC calculators (standalone — not yet converted to database reports)",
     items: [
@@ -365,7 +391,7 @@ export function NavBar({
           onClick={() => setOpenMenu(openMenu === "reports" ? null : "reports")}
           style={navButtonStyle(openMenu === "reports")}
         >
-          GAAP reports ▾
+          Reports ▾
         </button>
         {openMenu === "reports" && (
           <div style={dropdownStyle}>
@@ -424,7 +450,7 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 // The entity switcher (v0.36.0) — a native <select> rather than the custom dropdown
-// pattern used for "New transactions"/"GAAP reports" above, since a <select> already
+// pattern used for "New transactions"/"Reports" above, since a <select> already
 // gives free keyboard support and a familiar affordance for "pick one of these", and
 // there's no need for the multi-column grouped layout those two custom dropdowns have.
 // Sits on the same theme.primary bar, so — like navLinkStyle/navButtonStyle — it uses

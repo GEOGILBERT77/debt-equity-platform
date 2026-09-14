@@ -162,6 +162,8 @@ model User {
   /// InstrumentTermVersion.createdByUserId above.
   recordedOptionExercises   OptionExerciseEvent[]   @relation("OptionExerciseRecordedBy")
   recordedShareDispositions ShareDispositionEvent[] @relation("ShareDispositionRecordedBy")
+  /// v0.46.0 — reverse side of InstrumentForfeitureEvent.recordedByUserId.
+  recordedInstrumentForfeitures InstrumentForfeitureEvent[] @relation("InstrumentForfeitureRecordedBy")
   filedTaxFilingRecords     TaxFilingRecord[]       @relation("TaxFilingRecordFiledBy")
   /// v0.35.0 — reverse side of the stakeholder portal's invite system (see
   /// PortalInvite below): which admin generated a given invite, for the same
@@ -460,6 +462,9 @@ model Instrument {
   /// OptionExerciseEvent's own doc comment for why this is a separate append-only
   /// event log rather than another InstrumentTermVersion.
   exerciseEvents  OptionExerciseEvent[]
+  /// v0.46.0 — real forfeiture/expiration events (a grant or vested-but-unexercised
+  /// option that lapsed) — see InstrumentForfeitureEvent's own doc comment.
+  forfeitureEvents InstrumentForfeitureEvent[]
   /// v0.33.0 — reverse side of TaxFilingRecord.instrumentId, used only by
   /// ELECTION_83B_DEADLINE rows (see that field's doc comment) — an 83(b) deadline
   /// traces to the grant/instrument itself, not to an OptionExerciseEvent.
@@ -844,6 +849,61 @@ model ShareDispositionEvent {
   createdAt        DateTime @default(now())
 
   @@index([exerciseEventId])
+}
+
+/// v0.46.0 — what KIND of reduction a forfeiture/expiration event represents, matching
+/// (deliberately, by name) `AwardActivityEventType`'s "FORFEITED" | "EXPIRED" split in
+/// src/lib/accounting/reporting.ts, which a 10-K-style award activity roll-forward
+/// reports as two separate lines (an unvested grant someone left before vesting vs. a
+/// fully-vested option nobody exercised before its contractual term ran out) — see
+/// InstrumentForfeitureEvent's own doc comment for why this needed a real event log at
+/// all rather than being folded into OptionExerciseEvent.
+enum ForfeitureEventType {
+  FORFEITED
+  EXPIRED
+}
+
+/// v0.46.0 — George, verbatim, building the ASC 718/SEC-10-K award roll-forward report
+/// ("beginning balance, additions, exercises, forfeitures, etc."): a real, append-only
+/// EVENT log for the one reduction OptionExerciseEvent doesn't cover — a grant that
+/// LAPSED rather than being exercised/vested. Modeled exactly like OptionExerciseEvent
+/// (same "something that happened, once, on a specific date" reasoning — see that
+/// model's doc comment) rather than as another InstrumentTermVersion or a value on
+/// InstrumentStatus: `Instrument.status` is a single current-state field with no date
+/// attached and (as of this version) is never written by any code path in this app, so
+/// it can't answer "how many shares were forfeited BETWEEN these two dates," which is
+/// exactly what a roll-forward needs.
+///
+/// Applies to STOCK_OPTION (unvested options forfeited pre-vest, or vested-but-
+/// unexercised options that EXPIRE at the end of their contractual term — hence the two
+/// ForfeitureEventType values), RSU, and RESTRICTED_STOCK (unvested RSUs/restricted
+/// shares forfeited on termination — EXPIRED doesn't really apply to these, since
+/// there's no "contractual term to exercise," but the API layer doesn't forbid it since
+/// a company could still model an administrative cancellation that way).
+///
+/// `quantityForfeited` is deliberately NOT validated against "remaining unvested/
+/// outstanding quantity" at the schema level (Postgres has no way to enforce that
+/// against a JSON terms blob) — see the API route's own doc comment for the
+/// best-effort application-layer check, same posture as OptionExerciseEvent's route.
+model InstrumentForfeitureEvent {
+  id                 String              @id @default(cuid())
+  instrumentId       String
+  instrument         Instrument          @relation(fields: [instrumentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  forfeitureDate     DateTime
+  quantityForfeited  Decimal             @db.Decimal(24, 6)
+  eventType          ForfeitureEventType @default(FORFEITED)
+  /// Free text — "Terminated without exercising," "Failed to meet performance
+  /// condition," "Contractual term expired unexercised," etc. Optional: some companies
+  /// won't bother recording why, and the roll-forward's numbers don't depend on it.
+  reason             String?
+  /// NULLABLE for the same reason OptionExerciseEvent.recordedByUserId is — a direct-
+  /// SQL-inserted row (e.g. a data migration/backfill) has nothing to set this from.
+  recordedByUserId   String?
+  recordedByUser     User?               @relation("InstrumentForfeitureRecordedBy", fields: [recordedByUserId], references: [id])
+  createdAt          DateTime            @default(now())
+
+  @@index([instrumentId])
+  @@index([forfeitureDate])
 }
 
 /// v0.33.0 — what kind of compliance obligation a TaxFilingRecord row tracks. Kept as

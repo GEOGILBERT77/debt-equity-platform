@@ -44,7 +44,7 @@ export default async function GrantsReportPage({ searchParams }: { searchParams:
     <main style={{ fontFamily: theme.font.body, padding: "2rem", maxWidth: 1300 }}>
       <p>
         <Link href="/">&larr; All entities</Link> {" · "}
-        <Link href={`/reports/modification-audit?entityId=${entityId}`}>Modification audit</Link>
+        <Link href={`/reports/modification-audit?entityId=${entityId}`}>Modification History</Link>
       </p>
       <h1>Grants report</h1>
       <p style={{ color: theme.inkMuted }}>

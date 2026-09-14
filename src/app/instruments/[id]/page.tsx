@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { computeVisibleSchedule, computeFullSchedule, InstrumentTypeForDispatch } from "@/lib/accounting/dispatch";
 import { CloseInstrumentButton } from "@/app/components/CloseInstrumentButton";
 import { CorrectionPanel } from "@/app/components/CorrectionPanel";
+import { RecordForfeitureButton } from "@/app/components/RecordForfeitureButton";
 import { ApproveAmortizationScheduleButton } from "@/app/components/ApproveAmortizationScheduleButton";
 import { PerformanceConditionAssessmentPanel } from "@/app/components/PerformanceConditionAssessmentPanel";
 import { ScheduleGridTable } from "@/app/components/ScheduleGridTable";
@@ -74,7 +75,9 @@ export default async function InstrumentPage({ params }: { params: { id: string 
     scheduleError = err instanceof Error ? err.message : "Failed to compute schedule";
   }
 
-  const [closedRows, journalEntries, latestApproval] = await Promise.all([
+  const FORFEITABLE_TYPES = ["STOCK_OPTION", "RSU", "RESTRICTED_STOCK"];
+
+  const [closedRows, journalEntries, latestApproval, forfeitureEvents] = await Promise.all([
     db.scheduleEntry.findMany({
       where: { instrumentId: instrument.id, supersededByCorrectionId: null },
       orderBy: { periodEnd: "asc" },
@@ -89,6 +92,9 @@ export default async function InstrumentPage({ params }: { params: { id: string 
       orderBy: { approvedAt: "desc" },
       include: { rows: { orderBy: { periodEnd: "asc" } }, approvedByUser: true },
     }),
+    FORFEITABLE_TYPES.includes(instrument.type)
+      ? db.instrumentForfeitureEvent.findMany({ where: { instrumentId: instrument.id }, orderBy: { forfeitureDate: "desc" } })
+      : Promise.resolve([]),
   ]);
 
   // v0.22.0 — the full, end-to-end MONTHLY amortization table (see computeFullSchedule's
@@ -272,6 +278,27 @@ export default async function InstrumentPage({ params }: { params: { id: string 
           cells: [v.effectiveDate.toISOString().slice(0, 10), v.label],
         }))}
       />
+
+      {FORFEITABLE_TYPES.includes(instrument.type) && (
+        <>
+          <h2>Forfeitures &amp; expirations</h2>
+          <p style={{ color: theme.inkMuted, fontSize: "0.9rem" }}>
+            Feeds the "Forfeited"/"Expired" columns on the{" "}
+            <Link href={`/reports/asc-718-disclosures?entityId=${instrument.entityId}`}>ASC 718 award roll-forward</Link> — record
+            an event here whenever a grant lapses, rather than adjusting the roll-forward's numbers by hand.
+          </p>
+          <RecordForfeitureButton
+            instrumentId={instrument.id}
+            history={forfeitureEvents.map((e) => ({
+              id: e.id,
+              forfeitureDate: e.forfeitureDate.toISOString().slice(0, 10),
+              quantityForfeited: e.quantityForfeited.toString(),
+              eventType: e.eventType,
+              reason: e.reason,
+            }))}
+          />
+        </>
+      )}
     </main>
   );
 }
