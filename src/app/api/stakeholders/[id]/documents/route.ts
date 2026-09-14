@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
+import { LATEST_ANALYSIS_INCLUDE, withFlattenedLatestAnalysis } from "@/lib/documents/latestAnalysis";
 
 /**
  * GET /api/stakeholders/:id/documents — feeds StakeholderDocumentsPanel.tsx, the
@@ -31,12 +32,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       OR: [{ stakeholderId: stakeholder.id }, { instrument: { stakeholderId: stakeholder.id } }],
     },
     include: {
-      versions: { orderBy: { versionNumber: "desc" }, take: 1 },
+      versions: { orderBy: { versionNumber: "desc" }, take: 1, include: LATEST_ANALYSIS_INCLUDE },
       instrument: { select: { id: true, type: true } },
-      contractAnalyses: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, identifiedInstrumentType: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ stakeholder: { id: stakeholder.id, name: stakeholder.name }, documents });
+  return NextResponse.json({
+    stakeholder: { id: stakeholder.id, name: stakeholder.name },
+    documents: documents.map(withFlattenedLatestAnalysis),
+  });
 }

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requirePageEntityAccess, requireCurrentUser, resolveDefaultEntityId } from "@/lib/auth/pageGuard";
 import { ListingTable } from "@/app/components/ListingTable";
 import { DocumentUploadForm } from "@/app/components/DocumentUploadForm";
+import { LATEST_ANALYSIS_INCLUDE, withFlattenedLatestAnalysis } from "@/lib/documents/latestAnalysis";
 
 const ANALYSIS_STATUS_LABELS: Record<string, string> = {
   PENDING: "Queued",
@@ -53,7 +54,7 @@ export default async function DocumentsPage({
 
   const { stakeholderId, instrumentId } = searchParams;
 
-  const [documents, stakeholders, instruments] = await Promise.all([
+  const [documentsRaw, stakeholders, instruments] = await Promise.all([
     db.document.findMany({
       where: {
         entityId,
@@ -61,16 +62,16 @@ export default async function DocumentsPage({
         ...(instrumentId ? { instrumentId } : {}),
       },
       include: {
-        versions: { orderBy: { versionNumber: "desc" }, take: 1 },
+        versions: { orderBy: { versionNumber: "desc" }, take: 1, include: LATEST_ANALYSIS_INCLUDE },
         stakeholder: { select: { id: true, name: true } },
         instrument: { select: { id: true, type: true } },
-        contractAnalyses: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, identifiedInstrumentType: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
     db.stakeholder.findMany({ where: { entityId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.instrument.findMany({ where: { entityId }, orderBy: { issueDate: "desc" }, select: { id: true, type: true, stakeholderId: true } }),
   ]);
+  const documents = documentsRaw.map(withFlattenedLatestAnalysis);
 
   const filteredStakeholderName = stakeholderId ? stakeholders.find((s) => s.id === stakeholderId)?.name : null;
 

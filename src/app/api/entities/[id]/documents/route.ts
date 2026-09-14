@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireApiEntityAccess } from "@/lib/auth/apiGuard";
 import { buildStoragePath, uploadDocumentFile } from "@/lib/storage/supabaseStorage";
+import { LATEST_ANALYSIS_INCLUDE, withFlattenedLatestAnalysis } from "@/lib/documents/latestAnalysis";
 
 /**
  * GET /api/entities/:id/documents?stakeholderId=&instrumentId=&category= — the entity-
@@ -41,16 +42,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       ...(category ? { category } : {}),
     },
     include: {
-      versions: { orderBy: { versionNumber: "desc" }, take: 1 },
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        include: LATEST_ANALYSIS_INCLUDE,
+      },
       stakeholder: { select: { id: true, name: true } },
       instrument: { select: { id: true, type: true } },
       uploadedByUser: { select: { id: true, name: true } },
-      contractAnalyses: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, identifiedInstrumentType: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ documents });
+  return NextResponse.json({ documents: documents.map(withFlattenedLatestAnalysis) });
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

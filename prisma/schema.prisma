@@ -813,10 +813,17 @@ model Document {
   /// field is — a direct-SQL-inserted row has nothing to set this from.
   uploadedByUserId String?
   uploadedByUser   User?          @relation("DocumentUploadedBy", fields: [uploadedByUserId], references: [id])
+  /// v0.47.0 — ContractAnalysis links to a specific DocumentVersion, not to Document
+  /// directly (see ContractAnalysis's own doc comment for why — an analysis is pinned
+  /// to the exact version it actually read). There is deliberately no
+  /// `Document.contractAnalyses` shortcut field: it would need its own denormalized FK
+  /// with no real column backing it, and Prisma requires every relation to be backed by
+  /// an actual foreign key on one concrete side. To get a document's analyses, go
+  /// through its versions (`documentVersion.contractAnalyses` below) — see
+  /// documents/page.tsx and the entity/stakeholder documents API routes for the query
+  /// shape this actually uses in practice (nested under `versions`, then flattened back
+  /// onto each document for the UI).
   versions      DocumentVersion[]
-  /// v0.47.0 — an AI-proposed accounting analysis run against one of this document's
-  /// versions. See ContractAnalysis's own doc comment.
-  contractAnalyses ContractAnalysis[]
   createdAt     DateTime          @default(now())
 
   @@index([entityId])
@@ -853,6 +860,11 @@ model DocumentVersion {
   /// an enum since the exact vendor's status vocabulary is what actually governs this.
   status        String
   createdAt     DateTime @default(now())
+  /// v0.47.0 — opposite side of ContractAnalysis.documentVersion below. Every AI
+  /// analysis run is pinned to the specific version it actually read — see
+  /// ContractAnalysis's own doc comment for why (a later corrected/re-signed version
+  /// never silently reattributes an earlier analysis).
+  contractAnalyses ContractAnalysis[]
 
   @@unique([documentId, versionNumber])
 }

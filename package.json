@@ -1,6 +1,6 @@
 {
   "name": "debt-equity-platform",
-  "version": "0.47.0",
+  "version": "0.47.1",
   "private": true,
   "description": "Core accounting engine and data model for a debt & equity management platform.",
   "type": "module",
