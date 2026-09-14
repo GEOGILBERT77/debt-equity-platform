@@ -207,8 +207,18 @@ export function buildAwardRollforward(input: AwardRollforwardInput): AwardRollfo
   // (the real weighted price as of `periodStart`, after replaying all prior history)
   // becomes `atEnd`'s STARTING price — not `atStart`'s own starting price, which is
   // always the literal 0 seed and would silently discard all that prior history.
+  //
+  // `weightedAverageExercisePriceAtEnd` is typed OPTIONAL on `AwardActivityRollforward`
+  // (it's only ever set inside that function's own `if (...!== undefined)` branch) —
+  // TypeScript has no way to know from the call site alone that passing an explicit
+  // `0` here always takes that branch, so every read of it below falls back to a
+  // literal zero purely to satisfy that static type; at runtime it's never actually
+  // undefined given how these two calls are seeded.
+  const ZERO = new Decimal(0);
   const atStart = buildAwardActivityRollforward(0, beforeStart, 0);
-  const atEnd = buildAwardActivityRollforward(atStart.outstandingAtEnd, inPeriod, atStart.weightedAverageExercisePriceAtEnd);
+  const priceAtStart = atStart.weightedAverageExercisePriceAtEnd ?? ZERO;
+  const atEnd = buildAwardActivityRollforward(atStart.outstandingAtEnd, inPeriod, priceAtStart);
+  const priceAtEnd = atEnd.weightedAverageExercisePriceAtEnd ?? ZERO;
 
   const forfeitedInPeriod = sumByType(inPeriodInternal, "FORFEITED");
   const expiredInPeriod = sumByType(inPeriodInternal, "EXPIRED");
@@ -234,8 +244,8 @@ export function buildAwardRollforward(input: AwardRollforwardInput): AwardRollfo
     forfeited: forfeitedInPeriod,
     expired: expiredInPeriod,
     outstandingAtEnd: atEnd.outstandingAtEnd,
-    priceAtStart: atStart.weightedAverageExercisePriceAtEnd,
-    priceAtEnd: atEnd.weightedAverageExercisePriceAtEnd,
+    priceAtStart,
+    priceAtEnd,
     priceLabel,
     warnings,
   };

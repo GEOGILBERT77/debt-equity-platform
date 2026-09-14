@@ -26,7 +26,10 @@ const CONDITION_CLASSES: { value: ConditionClassFilter; label: string }[] = [
  * as service-condition in this app. Read defensively (terms is untyped JSON), same
  * posture as grantsReport.ts's readTranches. */
 function readConditionType(terms: Record<string, unknown>): "service" | "performance" | "market" {
-  return terms.conditionType === "performance" || terms.conditionType === "market" ? terms.conditionType : "service";
+  const raw = terms.conditionType;
+  if (raw === "performance") return "performance";
+  if (raw === "market") return "market";
+  return "service";
 }
 
 /**
